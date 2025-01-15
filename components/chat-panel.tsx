@@ -9,14 +9,16 @@ import { PhotoCapture } from './photo-capture'
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import type { AppSettings } from './settings-popup'
 import { useWhisper } from '@/hooks/useWhisper'
-import { useSpeechSynthesis } from '@/hooks/useSpeechSynthesis'
+import { useSpeechOutput } from '@/hooks/useSpeechOutput'
 import { isSimpleTransaction } from '@/lib/transaction-processor'
 import { processMessage } from '@/lib/api'
 import { useAuth } from '@/hooks/useAuth'
 import type { 
   WhisperResponse, 
-  AssistantResponse 
+  AssistantResponse,
+  ElevenLabsResponse
 } from '@/types/api'
+import type { Context } from '@/types/database'
 
 interface Message {
   type: 'text' | 'image'
@@ -49,6 +51,7 @@ export function ChatPanel({
   const [messages, setMessages] = useState<Message[]>([
     { type: 'text', content: "hello,how can i help you?", isUser: false }
   ])
+  const [isProcessing, setIsProcessing] = useState(false)
   const [inputMessage, setInputMessage] = useState('')
   const [showPhotoOptions, setShowPhotoOptions] = useState(false)
   const chatContainerRef = useRef<HTMLDivElement>(null)
@@ -59,7 +62,8 @@ export function ChatPanel({
     startRecording, 
     stopRecording 
   } = useWhisper()
-  const { speak } = useSpeechSynthesis()
+  const { speak, stop, isSpeaking } = useSpeechOutput()
+  const [contextHistory, setContextHistory] = useState<Context[]>([])
 
   // Handle transcript updates
   useEffect(() => {
@@ -70,7 +74,8 @@ export function ChatPanel({
   }, [transcript])
 
   const handleSend = async (messageToSend: string) => {
-    if (messageToSend.trim()) {
+    if (messageToSend.trim() && !isProcessing) {
+      setIsProcessing(true);
       try {
         if (!userId) {
           setMessages(prev => [...prev, { 
@@ -99,6 +104,8 @@ export function ChatPanel({
       } catch (error) {
         console.error('Failed to process message:', error)
         handleResponse("I'm having trouble understanding. Could you rephrase that?")
+      } finally {
+        setIsProcessing(false)
       }
       setInputMessage('')
     }
@@ -134,32 +141,45 @@ export function ChatPanel({
         isUser: false 
       }])
       
-      if (useElevenLabs) {
-        const audioResponse = await fetch('/api/text-to-speech', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: response })
-        })
-
-        if (!audioResponse.ok) {
-          throw new Error('Failed to generate speech')
-        }
-
-        const audioBlob = await audioResponse.blob()
-        const audio = new Audio(URL.createObjectURL(audioBlob))
-        await audio.play()
-      } else {
-        speak(response) // Use browser TTS for simple responses
-      }
+      // Determine response type
+      const responseType = determineResponseType(response)
+      
+      // Use new speak function with options
+      await speak(response, {
+        responseType,
+        emotion: determineEmotion(response),
+        useElevenLabs: needsElevenLabs(response)
+      })
     } catch (error) {
       console.error('Voice feedback error:', error)
-      // Always fall back to browser TTS on error
-      speak(response)
     }
   }
 
+  // Helper functions for response classification
+  function determineResponseType(text: string): 'simple' | 'complex' | 'query' | 'error' {
+    if (text.includes('sorry') || text.includes('error')) return 'error'
+    if (text.includes('?')) return 'query'
+    if (text.includes('₹') || text.includes('reminder') || text.length > 100) return 'complex'
+    return 'simple'
+  }
+
+  function determineEmotion(text: string): 'neutral' | 'concerned' | 'friendly' {
+    if (text.includes('sorry') || text.includes('error')) return 'concerned'
+    if (text.includes('great') || text.includes('sure')) return 'friendly'
+    return 'neutral'
+  }
+
+  function needsElevenLabs(text: string): boolean {
+    return (
+      text.includes('₹') ||          // Contains currency
+      text.includes('reminder') ||    // Is a reminder
+      text.includes('?') ||          // Is a question
+      text.length > 100              // Is a long response
+    )
+  }
+
   // Used for ongoing conversations and complex queries
-  const handleMessage = async (message: string) => {
+  const handleMessage = async (input: string) => {
     if (!userId) {
       setMessages(prev => [...prev, {
         type: 'text',
@@ -170,19 +190,42 @@ export function ChatPanel({
     }
 
     try {
-      const response = await processMessage(message, userId)
-      setMessages(prev => [...prev, {
-        type: 'text',
-        content: response.response,
-        isUser: false
-      }])
+      const response = await fetch('/api/context', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          userId,
+          input,
+          context: contextHistory[contextHistory.length - 1]
+        })
+      })
+
+      const data: AssistantResponse = await response.json();
+
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to process message');
+      }
+
+      // Update context history
+      if (data.data?.context) {
+        setContextHistory(prev => [...prev, data.data.context]);
+      }
+
+      // Handle response based on type
+      if (data.needsMoreInfo) {
+        // Use ElevenLabs for clarification questions
+        setUseElevenLabs(true);
+        handleResponse(data.clarification?.context || "Could you provide more details?");
+      } else {
+        // Use appropriate voice based on response complexity
+        setUseElevenLabs(!isSimpleTransaction(input));
+        handleResponse(data.response);
+      }
     } catch (error) {
-      console.error('Error:', error)
-      setMessages(prev => [...prev, {
-        type: 'text',
-        content: "Sorry, there was an error",
-        isUser: false
-      }])
+      console.error('Error:', error);
+      handleResponse("I'm sorry, I'm having trouble understanding. Could you try again?");
     }
   }
 
@@ -190,7 +233,7 @@ export function ChatPanel({
     <Sheet open={open} onOpenChange={onClose}>
       <SheetContent 
         side="left" 
-        className="w-full sm:w-[400px] p-0 bg-black border-0 flex flex-col h-full"
+        className="w-full sm:w-[400px] p-0 bg-white border-0 flex flex-col h-full"
       >
         {/* Header */}
         <div className="flex justify-between items-center p-4">
@@ -233,7 +276,7 @@ export function ChatPanel({
         <div className="flex-1" />
 
         {/* Chat Group - Messages and Input */}
-        <div className="w-full h-[60%] bg-[#1A1A1A] rounded-t-3xl">
+        <div className="w-full h-[60%] bg-gray-50 rounded-t-3xl">
           {/* Messages */}
           <div 
             ref={chatContainerRef}
@@ -268,14 +311,14 @@ export function ChatPanel({
           </div>
 
           {/* Input Area */}
-          <div className="p-4 border-t border-gray-800">
+          <div className="p-4 border-t border-gray-200">
             <div className="flex gap-2">
               <Input
                 value={inputMessage}
                 onChange={(e) => setInputMessage(e.target.value)}
                 onKeyPress={(e) => e.key === 'Enter' && handleSend(inputMessage)}
                 placeholder="do you want to type your message instead?"
-                className="flex-1 bg-[#2A2A2A] border-none text-white placeholder:text-gray-400 rounded-lg"
+                className="flex-1 bg-gray-100 border-none text-gray-900 placeholder:text-gray-500 rounded-lg"
               />
               <Button
                 onClick={() => handleSend(inputMessage)}
@@ -289,7 +332,7 @@ export function ChatPanel({
 
         {/* Photo Options Modal */}
         <Dialog open={showPhotoOptions} onOpenChange={setShowPhotoOptions}>
-          <DialogContent className="bg-black border-gray-800 rounded-3xl p-6 w-[90%] max-w-[400px]">
+          <DialogContent className="bg-white border-gray-200 rounded-3xl p-6 w-[90%] max-w-[400px]">
             <DialogTitle className="sr-only">Photo Options</DialogTitle>
             <div className="space-y-4">
               <Button

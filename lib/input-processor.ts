@@ -120,10 +120,10 @@ function detectCategories(input: string): CategoryType[] {
 
   // Add LOGBOOK category for service provider transactions
   if (detectServiceProvider(input)) {
-    categories.add('LOGBOOK')
+    categories.add('logbook')
   }
 
-  return categories.size > 0 ? Array.from(categories) : ['MISCELLANEOUS']
+  return categories.size > 0 ? Array.from(categories) : ['miscellaneous']
 }
 
 function detectPaymentMethod(input: string): string | undefined {

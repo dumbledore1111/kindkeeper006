@@ -180,6 +180,89 @@ const REMINDER_KEYWORDS = [
   'must pay', 'due', 'deadline'
 ]
 
+// Add new constants for category creation
+const CATEGORY_CREATION_PATTERNS = [
+  'create new category',
+  'make new category',
+  'add category',
+  'new category',
+  'create category'
+];
+
+const CATEGORY_KEYWORDS = [
+  'for',
+  'to track',
+  'to record',
+  'to log',
+  'expenses for',
+  'spending on'
+];
+
+// Add interfaces
+interface CategoryDetails {
+  name: string;
+  description?: string;
+  parentCategory?: string;
+  keywords?: string[];
+  context?: string;
+}
+
+const COMMON_WORDS = [
+  'create', 'new', 'category', 'for', 'the', 'and', 'track', 'record',
+  'expenses', 'costs', 'spending', 'want', 'need', 'would', 'like'
+];
+
+function extractCategoryDetails(text: string): CategoryDetails {
+  const lowerText = text.toLowerCase();
+  
+  // Match patterns like "create category for X" or "new category to track Y"
+  const forPattern = /(?:for|to track|to record)\s+([a-z\s]+?)(?:\s+expenses|\s+costs|\s+spending|$)/;
+  const match = lowerText.match(forPattern);
+
+  if (!match) {
+    return {
+      name: 'unknown',
+      description: text
+    };
+  }
+
+  const categoryName = match[1].trim()
+    .replace(/\s+/g, '_') // Replace spaces with underscores
+    .replace(/[^a-z0-9_]/g, ''); // Remove any other special characters
+
+  // Determine parent category based on keywords
+  const parentCategory = determineParentCategory(lowerText);
+
+  // Extract keywords from the full text
+  const keywords = extractKeywords(text);
+
+  return {
+    name: categoryName,
+    description: `Track expenses for ${match[1].trim()}`,
+    parentCategory,
+    keywords,
+    context: lowerText.includes('project') ? 'project' : 'general'
+  };
+}
+
+function determineParentCategory(text: string): string {
+  if (text.includes('project') || text.includes('renovation')) return 'project_expenses';
+  if (text.includes('medical') || text.includes('health')) return 'medical';
+  if (text.includes('house') || text.includes('home')) return 'home_maintenance';
+  if (text.includes('education') || text.includes('school')) return 'education';
+  return 'miscellaneous';
+}
+
+function extractKeywords(text: string): string[] {
+  const words = text.toLowerCase()
+    .replace(/[^a-z\s]/g, '')
+    .split(' ')
+    .filter(word => word.length > 3)
+    .filter(word => !COMMON_WORDS.includes(word));
+
+  return Array.from(new Set(words));  // This is the fixed line
+}
+
 export async function processSpeechInput(audioInput: Blob): Promise<WhisperResponse> {
   const formData = new FormData()
   formData.append('file', audioInput)
@@ -423,6 +506,32 @@ function calculateConfidence(matchedKeywords: number, totalKeywords: number): nu
   return Math.min(Math.max(baseConfidence, 20), 100)
 }
 
+// Add new function for category creation detection
+ function detectCategoryCreationIntent(text: string): {
+  isCreatingCategory: boolean;
+  categoryName?: string;
+  parentCategory?: string;
+  description?: string;
+} {
+  const lowerText = text.toLowerCase();
+  
+  // Check if this is a category creation request
+  const isCreating = CATEGORY_CREATION_PATTERNS.some(pattern => 
+    lowerText.includes(pattern)
+  );
+
+  if (!isCreating) return { isCreatingCategory: false };
+
+  // Extract category name and details
+  // Example: "create new category for house painting"
+  const categoryDetails = extractCategoryDetails(text);
+
+  return {
+    isCreatingCategory: true,
+    ...categoryDetails
+  };
+}
+
 export {
   extractAmount,
   detectTransactionType,
@@ -432,5 +541,7 @@ export {
   detectReminder,
   extractDate,
   detectLanguage,
-  calculateConfidence
+  calculateConfidence,
+  detectCategoryCreationIntent,
+  extractCategoryDetails
 };

@@ -59,7 +59,7 @@ export function AccountPanel({ open, onClose, onSignOut }: AccountPanelProps) {
     currency: 'USD',
     language: 'en',
     voiceType: 'female',
-    theme: 'dark' as const,
+    theme: 'light' as const,
   })
   const [user, setUser] = useState<any>(null)
 
@@ -299,10 +299,10 @@ export function AccountPanel({ open, onClose, onSignOut }: AccountPanelProps) {
     <Sheet open={open} onOpenChange={onClose}>
       <SheetContent 
         side="left" 
-        className={`w-[400px] ${appSettings.theme === 'light' ? 'bg-white text-black' : 'bg-gray-900 text-white'} p-0 border-r-gray-300 overflow-y-auto`}
+        className="w-[400px] bg-white text-black p-0 border-r-gray-300 overflow-y-auto"
       >
         {/* Header */}
-        <div className={`flex justify-between items-center p-4 ${appSettings.theme === 'light' ? 'bg-gray-100' : 'bg-gray-800'} sticky top-0 z-10`}>
+        <div className="flex justify-between items-center p-4 bg-gray-50 sticky top-0 z-10">
           <Button 
             onClick={onClose}
             className="w-24 h-10 rounded-full bg-gradient-to-r from-orange-400 to-orange-500 
@@ -322,11 +322,11 @@ export function AccountPanel({ open, onClose, onSignOut }: AccountPanelProps) {
         </div>
 
         {/* Profile Info */}
-        <div className={`p-6 ${appSettings.theme === 'light' ? 'bg-gray-50' : 'bg-gray-800'} mb-4`}>
-          <h2 className={`text-2xl font-bold ${appSettings.theme === 'light' ? 'text-gray-900' : 'text-white'} mb-2`}>
+        <div className="p-6 bg-white mb-4 border-b border-gray-100">
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">
             {user?.profile?.full_name || user?.user_metadata?.full_name || 'Loading...'}
           </h2>
-          <p className={appSettings.theme === 'light' ? 'text-gray-600' : 'text-gray-300'}>
+          <p className="text-gray-600">
             {user?.profile?.email || user?.email || 'Loading...'}
           </p>
         </div>
@@ -334,7 +334,7 @@ export function AccountPanel({ open, onClose, onSignOut }: AccountPanelProps) {
         {/* Phone Number */}
         <div className="px-6 py-4">
           <div className="flex justify-between items-center mb-2">
-            <h3 className={`text-lg font-semibold ${appSettings.theme === 'light' ? 'text-gray-900' : 'text-white'}`}>Phone Number</h3>
+            <h3 className="text-lg font-semibold text-gray-900">Phone Number</h3>
             {!isEditingPhone && !savedPhone && (
               <Button 
                 variant="ghost" 
@@ -355,7 +355,7 @@ export function AccountPanel({ open, onClose, onSignOut }: AccountPanelProps) {
                 placeholder="Enter phone number"
                 value={phoneNumber}
                 onChange={(e) => setPhoneNumber(e.target.value)}
-                className={appSettings.theme === 'light' ? 'bg-white border-gray-300 text-black' : 'bg-gray-800 border-gray-700 text-white'}
+                className="bg-gray-50 border-gray-200 text-gray-900"
               />
               <div className="flex gap-2">
                 <Button 
@@ -376,7 +376,7 @@ export function AccountPanel({ open, onClose, onSignOut }: AccountPanelProps) {
             </div>
           ) : (
             <div className="flex justify-between items-center">
-              <p className={appSettings.theme === 'light' ? 'text-gray-600' : 'text-gray-300'}>
+              <p className="text-gray-600">
                 {savedPhone || 'No phone number added'}
               </p>
               {savedPhone && (
@@ -395,13 +395,13 @@ export function AccountPanel({ open, onClose, onSignOut }: AccountPanelProps) {
 
         {/* Emergency Contacts */}
         <div className="px-6 py-4 border-t border-gray-800">
-          <h3 className={`text-lg font-semibold ${appSettings.theme === 'light' ? 'text-gray-900' : 'text-white'} mb-4`}>Emergency Contacts</h3>
+          <h3 className="text-lg font-semibold text-white mb-4">Emergency Contacts</h3>
           {emergencyContacts.map((contact) => (
-            <div key={contact.id} className={`mb-4 p-3 ${appSettings.theme === 'light' ? 'bg-gray-100' : 'bg-gray-800'} rounded-lg flex justify-between items-start`}>
+            <div key={contact.id} className="mb-4 p-3 bg-gray-50 rounded-lg flex justify-between items-start">
               <div>
-                <p className={`font-medium ${appSettings.theme === 'light' ? 'text-gray-900' : 'text-white'}`}>{contact.name}</p>
-                <p className={`text-sm ${appSettings.theme === 'light' ? 'text-gray-600' : 'text-gray-400'}`}>{contact.relationship}</p>
-                <p className={`text-sm ${appSettings.theme === 'light' ? 'text-gray-600' : 'text-gray-400'}`}>{contact.phoneNumber}</p>
+                <p className="font-medium text-gray-900">{contact.name}</p>
+                <p className="text-sm text-gray-600">{contact.relationship}</p>
+                <p className="text-sm text-gray-600">{contact.phoneNumber}</p>
               </div>
               <div className="flex gap-2">
                 <Button
@@ -429,19 +429,19 @@ export function AccountPanel({ open, onClose, onSignOut }: AccountPanelProps) {
                 placeholder="Name"
                 value={newEmergencyContact.name}
                 onChange={(e) => setNewEmergencyContact({...newEmergencyContact, name: e.target.value})}
-                className={appSettings.theme === 'light' ? 'bg-white border-gray-300 text-black' : 'bg-gray-800 border-gray-700 text-white'}
+                className="bg-gray-50 border-gray-200 text-gray-900"
               />
               <Input
                 placeholder="Relationship"
                 value={newEmergencyContact.relationship}
                 onChange={(e) => setNewEmergencyContact({...newEmergencyContact, relationship: e.target.value})}
-                className={appSettings.theme === 'light' ? 'bg-white border-gray-300 text-black' : 'bg-gray-800 border-gray-700 text-white'}
+                className="bg-gray-50 border-gray-200 text-gray-900"
               />
               <Input
                 placeholder="Phone Number"
                 value={newEmergencyContact.phoneNumber}
                 onChange={(e) => setNewEmergencyContact({...newEmergencyContact, phoneNumber: e.target.value})}
-                className={appSettings.theme === 'light' ? 'bg-white border-gray-300 text-black' : 'bg-gray-800 border-gray-700 text-white'}
+                className="bg-gray-50 border-gray-200 text-gray-900"
               />
               <div className="flex gap-2">
                 <Button 
@@ -476,17 +476,17 @@ export function AccountPanel({ open, onClose, onSignOut }: AccountPanelProps) {
 
         {/* Bank Accounts */}
         <div className="px-6 py-4 border-t border-gray-800">
-          <h3 className={`text-lg font-semibold ${appSettings.theme === 'light' ? 'text-gray-900' : 'text-white'} mb-4`}>Bank Accounts</h3>
+          <h3 className="text-lg font-semibold text-white mb-4">Bank Accounts</h3>
           {bankAccounts.map((account) => (
-            <div key={account.id} className={`mb-4 p-3 ${appSettings.theme === 'light' ? 'bg-gray-100' : 'bg-gray-800'} rounded-lg flex justify-between items-start`}>
+            <div key={account.id} className="mb-4 p-3 bg-gray-50 rounded-lg flex justify-between items-start">
               <div>
-                <p className={`font-medium ${appSettings.theme === 'light' ? 'text-gray-900' : 'text-white'}`}>
+                <p className="font-medium text-gray-900">
                   {account.bank_name}
                 </p>
-                <p className={`text-sm ${appSettings.theme === 'light' ? 'text-gray-600' : 'text-gray-400'}`}>
+                <p className="text-sm text-gray-600">
                   {account.account_type}
                 </p>
-                <p className={`text-sm ${appSettings.theme === 'light' ? 'text-gray-600' : 'text-gray-400'}`}>
+                <p className="text-sm text-gray-600">
                   ****{account.account_number?.slice(-4)}
                 </p>
               </div>
@@ -516,19 +516,19 @@ export function AccountPanel({ open, onClose, onSignOut }: AccountPanelProps) {
                 placeholder="Bank Name"
                 value={newBankAccount.bank_name}
                 onChange={(e) => setNewBankAccount({...newBankAccount, bank_name: e.target.value})}
-                className={appSettings.theme === 'light' ? 'bg-white border-gray-300 text-black' : 'bg-gray-800 border-gray-700 text-white'}
+                className="bg-gray-50 border-gray-200 text-gray-900"
               />
               <Input
                 placeholder="Account Type"
                 value={newBankAccount.account_type}
                 onChange={(e) => setNewBankAccount({...newBankAccount, account_type: e.target.value})}
-                className={appSettings.theme === 'light' ? 'bg-white border-gray-300 text-black' : 'bg-gray-800 border-gray-700 text-white'}
+                className="bg-gray-50 border-gray-200 text-gray-900"
               />
               <Input
                 placeholder="Account Number"
                 value={newBankAccount.account_number}
                 onChange={(e) => setNewBankAccount({...newBankAccount, account_number: e.target.value})}
-                className={appSettings.theme === 'light' ? 'bg-white border-gray-300 text-black' : 'bg-gray-800 border-gray-700 text-white'}
+                className="bg-gray-50 border-gray-200 text-gray-900"
               />
               <div className="flex gap-2">
                 <Button 

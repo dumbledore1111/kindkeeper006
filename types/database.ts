@@ -145,6 +145,57 @@ export type Transaction = {
   created_at: string
   is_recurring: boolean
   payment_method?: string
+  category?: CategoryType 
 }
 
 export type PatternType = 'TRANSACTION' | 'REMINDER' | 'QUERY' | 'COMPLEX'
+
+export type IntentType = 
+  | 'transaction' 
+  | 'query' 
+  | 'reminder' 
+  | 'category_creation' 
+  | 'attendance' 
+  | 'unknown';
+
+export interface Intent {
+  type: IntentType;
+  confidence: number;
+  category?: CategoryType;
+  action?: string;
+  relatedEvents: string[];
+}
+
+export interface ContextLog {
+  id: string;
+  user_id: string;
+  context_type: string;
+  context_data: any;
+  valid_from: Date;
+  valid_until?: Date;
+  created_at: Date;
+}
+
+export interface EventRelationship {
+  id: string;
+  primary_event_id: string;
+  primary_event_type: string;
+  related_event_id: string;
+  related_event_type: string;
+  relationship_type: string;
+  context?: any;
+  created_at: Date;
+}
+
+export interface Context {
+  userId: string;
+  currentIntent: Intent;
+  recentEvents: any[];
+  relatedContexts: ContextLog[];
+  userPreferences?: any;
+  timeContext?: {
+    referenceDate: Date;
+    period?: string;
+  };
+  relatedEvents: string[];
+}

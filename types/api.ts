@@ -11,6 +11,25 @@ export interface ApiResponse {
     audioBuffer?: ArrayBuffer
   }
   
+  export interface ElevenLabsVoiceSettings {
+    stability: number;
+    similarity_boost: number;
+    style?: number;
+    speaking_rate?: number;
+  }
+  
+  export interface ElevenLabsRequest {
+    text: string;
+    responseType?: 'simple' | 'complex' | 'query' | 'error';
+    emotion?: 'neutral' | 'concerned' | 'friendly';
+  }
+  
+  export interface ElevenLabsError {
+    type: 'api' | 'rate_limit' | 'network' | 'unknown';
+    message: string;
+    retryAfter?: number;
+  }
+  
   export interface AssistantResponse extends ApiResponse {
     response: string
     needsMoreInfo?: boolean
@@ -47,4 +66,17 @@ export interface ApiResponse {
       present: boolean
       notes?: string
     }
+  }
+  
+  export interface WhisperResult {
+    text: string;
+    language?: string;
+    confidence?: number;
+    original?: string;
+  }
+  
+  export interface WhisperError {
+    type: 'microphone' | 'network' | 'transcription' | 'unknown';
+    message: string;
+    shouldRetry: boolean;
   }

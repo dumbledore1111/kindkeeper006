@@ -1,16 +1,24 @@
 import { useState, useCallback, useRef } from 'react'
+import type { WhisperResult, WhisperError } from '@/types/api'
 
 export function useWhisper() {
   const [isRecording, setIsRecording] = useState(false)
   const [transcript, setTranscript] = useState('')
-  const [error, setError] = useState<string>('')
+  const [error, setError] = useState<WhisperError | null>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const timeoutRef = useRef<NodeJS.Timeout>()
 
   const startRecording = useCallback(async () => {
     try {
+      // Clear previous error
+      setError(null)
+
       if (!navigator.mediaDevices || !window.MediaRecorder) {
-        throw new Error('Recording is not supported in this browser')
+        throw {
+          type: 'microphone',
+          message: 'Recording is not supported in this browser',
+          shouldRetry: false
+        } as WhisperError
       }
 
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -39,7 +47,7 @@ export function useWhisper() {
       mediaRecorder.addEventListener('stop', async () => {
         try {
           const audioBlob = new Blob(audioChunks, { type: 'audio/webm' })
-          
+
           const formData = new FormData()
           formData.append('file', audioBlob, 'audio.webm')
 
@@ -49,25 +57,38 @@ export function useWhisper() {
           })
 
           if (!response.ok) {
-            throw new Error(`Server error: ${response.status}`)
+            throw {
+              type: 'network',
+              message: `Server error: ${response.status}`,
+              shouldRetry: true
+            } as WhisperError
           }
 
-          const data = await response.json()
+          const data: { success: boolean; text: string; confidence?: number } = await response.json()
+          
           if (data.success && data.text) {
             const cleanedText = data.text
               .trim()
               .replace(/(\r\n|\n|\r)/gm, " ")
               .replace(/\s+/g, " ")
               .replace(/^\s+|\s+$/g, "")
-            
+
             setTranscript(cleanedText)
-            setError('')
+            setError(null)
           } else {
-            throw new Error(data.error || 'Failed to transcribe')
+            throw {
+              type: 'transcription',
+              message: data.text || 'Failed to transcribe',
+              shouldRetry: true
+            } as WhisperError
           }
         } catch (err) {
           console.error('Transcription error:', err)
-          setError(err instanceof Error ? err.message : 'Failed to transcribe audio')
+          setError({
+            type: 'transcription',
+            message: err instanceof Error ? err.message : 'Failed to transcribe audio',
+            shouldRetry: true
+          })
         } finally {
           stream.getTracks().forEach(track => track.stop())
           setIsRecording(false)
@@ -90,7 +111,11 @@ export function useWhisper() {
 
     } catch (err) {
       console.error('Recording error:', err)
-      setError(err instanceof Error ? err.message : 'Failed to start recording')
+      setError({
+        type: 'microphone',
+        message: err instanceof Error ? err.message : 'Failed to start recording',
+        shouldRetry: false
+      })
       setIsRecording(false)
     }
   }, [])

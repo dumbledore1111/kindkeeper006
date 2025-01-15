@@ -8,7 +8,28 @@ import OpenAI from 'openai'
 import { supabase } from './supabase'
 import { processInput } from './transaction-processor'
 import { parseDateFromText } from './date-parser'
+import type { 
+  Transaction, 
+  EventRelationship,
+  StructuredContext // if you have this defined in database types
+} from '@/types/database'
 
+// After your existing imports, add:
+interface StructuredContext {
+  recentTransactions: Transaction[];
+  patterns: {
+    recurring: any[];
+    related: any[];
+    sequential: any[];
+  };
+  relationships: EventRelationship[];
+  userPreferences: any;
+  historicalQueries: {
+    query: string;
+    response: string;
+    timestamp: Date;
+  }[];
+}
 export const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 })
@@ -23,19 +44,22 @@ RULES:
 - Speak respectfully as to an elder
 - Use simple language
 - If speech recognition might have errors, ask for confirmation
+- Consider patterns in user's transaction history
+- Reference related transactions when relevant
+- Be aware of recurring payments and schedules
 
 EXAMPLES:
 User: "paid maid 2000 rupees"
-Assistant: "Got it, you paid your maid ₹2,000. Was it today?"
+Assistant: "Got it, you paid your maid ₹2,000. Was it today? (I notice this is your usual monthly amount)"
 
 User: "gave to ram"
-Assistant: "Could you tell me how much you gave to Ram?"
+Assistant: "Could you tell me how much you gave to Ram? (if and only if there was a transaction  to ram prior to this, (I notice Last payment was ₹500 two weeks ago))"
 
 User: "got pension"
-Assistant: "How much pension did you receive?"
+Assistant: "How much pension did you receive? (Usually ₹25,000 on 1st of each month)"
 
 User: "maid not coming today"
-Assistant: "I'll mark your maid as absent for today. Is that correct?"
+Assistant: "I'll mark your maid as absent for today. Is that correct? Should I adjust this month's payment of ₹2,000?"
 
 User: "remind me electricity bill"
 Assistant: "What amount should I remind you for the electricity bill?"
@@ -45,6 +69,8 @@ CRITICAL INFORMATION TO GET:
 2. Date (default to today)
 3. Person's name (for service providers)
 4. Purpose (if unclear)
+5. Pattern relevance (check against history)
+6. Related transactions (if any)
 
 Return JSON in format:
 {
@@ -54,15 +80,83 @@ Return JSON in format:
     "amount": number or null,
     "date": "YYYY-MM-DD" or null,
     "type": "expense" or "income" or "reminder"
+    "patterns": {
+      "isRecurring": boolean,
+      "relatedTransactions": string[],
+      "suggestedCategory": string
   },
   "needs_clarification": {
     "type": "amount|date|name|purpose",
     "context": "question to ask"
+     "suggestions": {
+      "fromHistory": string[],
+      "fromPatterns": string[]
+    }
   } or null
 }`
 
+// Add category creation prompt
+const CATEGORY_CREATION_PROMPT = `You are a financial assistant helping detect and process category creation requests. The user might want to create a custom category for tracking specific expenses.
+
+CATEGORY CREATION EXAMPLES:
+User: "Create a new category for house painting expenses"
+Assistant: {
+  "intent": "create_category",
+  "category": {
+    "name": "house_painting",
+    "description": "Track expenses related to house painting project",
+    "parent_category": "project_expenses",
+    "keywords": ["paint", "labor", "contractor", "supplies", "cleaning"],
+    "context": "home improvement project"
+  },
+  "response": "I'll create a new category for house painting expenses. Would you like to add any specific rules for this category?"
+}
+
+User: "I want to track all medical expenses for my mother separately"
+Assistant: {
+  "intent": "create_category",
+  "category": {
+    "name": "mother_medical",
+    "description": "Track medical expenses for mother",
+    "parent_category": "medical",
+    "keywords": ["doctor", "medicine", "hospital", "treatment", "mother"],
+    "context": "family healthcare"
+  },
+  "response": "I'll create a category to track your mother's medical expenses separately. Should I include any specific doctors or hospitals in the tracking rules?"
+}
+
+RULES:
+1. Always confirm the category creation with the user
+2. Suggest relevant keywords based on the category purpose
+3. Determine the most appropriate parent category
+4. Ask for additional rules if needed
+5. Keep category names concise but descriptive
+6. Never create duplicate categories
+7. Ensure the category fits within the extended category types`;
+
+// Add getCurrentUserId function
+async function getCurrentUserId(): Promise<string> {
+  // First try to get from supabase auth
+  const { data: { session } } = await supabase.auth.getSession();
+  if (session?.user?.id) {
+    return session.user.id;
+  }
+
+  // Fallback to context if available
+  if (typeof window !== 'undefined') {
+    // Check local storage or context for userId
+    const storedUserId = localStorage.getItem('userId');
+    if (storedUserId) return storedUserId;
+  }
+
+  throw new Error('No user ID available');
+}
+
+// Update processChatCompletion to use async/await
 export async function processChatCompletion(message: string) {
   try {
+    const userId = await getCurrentUserId();
+    
     // First, try pattern matching
     const patternResult = processInput(message)
     
@@ -70,42 +164,85 @@ export async function processChatCompletion(message: string) {
       return patternResult
     }
 
-    // If pattern matching needs clarification, use OpenAI
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4",
-      messages: [
-        { 
-          role: "assistant", 
-          content: TRANSACTION_PROMPT
-        },
-        { role: "user", content: message }
-      ],
-      response_format: { type: "json_object" }
-    })
+    export async function processChatCompletion(message: string, context?: StructuredContext) {
+      try {
+        const userId = await getCurrentUserId();
+        
+        // First, try pattern matching
+        const patternResult = processInput(message)
+        
+        if (!patternResult.needs_clarification) {
+          return patternResult
+        }
+    
+        const completion = await openai.chat.completions.create({
+          model: "gpt-4",
+          messages: [
+            { 
+              role: "system", 
+              content: message.toLowerCase().includes('category') ? 
+                CATEGORY_CREATION_PROMPT : 
+                TRANSACTION_PROMPT
+            },
+            { 
+              role: "user", 
+              content: JSON.stringify({
+                message,
+                context: context ? {
+                  recentTransactions: context.recentTransactions,
+                  patterns: context.patterns,
+                  relationships: context.relationships
+                } : {}
+              })
+            }
+          ],
+          response_format: { type: "json_object" }
+        });
+    
+        // Rest of your existing code...
+      } catch (error) {
+        console.error('Error in processChatCompletion:', error)
+        throw error
+      }
+    }
 
     if (!completion.choices[0].message.content) {
       throw new Error('No response from OpenAI')
     }
     
-    const aiResult = JSON.parse(completion.choices[0].message.content)
+    const result = JSON.parse(completion.choices[0].message.content)
     
-    if (aiResult.understood) {
+    if (result.intent === 'create_category') {
+      const response = await fetch('/api/category', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId,
+          command: message,
+          categoryDetails: result.category
+        })
+      });
+      
+      return response.json();
+    }
+
+    if (result.understood) {
       // Convert OpenAI understanding to our format
       return {
         ...patternResult,
-        transaction: aiResult.understood.type === 'expense' || aiResult.understood.type === 'income' ? {
-          amount: aiResult.understood.amount,
-          type: aiResult.understood.type,
-          description: aiResult.understood.text,
-          date: parseDateFromText(aiResult.understood.date)
+        transaction: result.understood.type === 'expense' || result.understood.type === 'income' ? {
+          amount: result.understood.amount,
+          type: result.understood.type,
+          description: result.understood.text,
+          date: parseDateFromText(result.understood.date)
         } : undefined,
-        needs_clarification: aiResult.needs_clarification
+        needs_clarification: result.needs_clarification
       }
     }
 
     return patternResult
   } catch (error) {
-    console.error('Chat completion error:', error)
+    console.error('Error in processChatCompletion:', error)
     throw error
   }
 }
