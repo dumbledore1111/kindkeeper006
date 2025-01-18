@@ -14,3 +14,10 @@ export type AppSettings = {
   voiceType: string
   theme: 'light' | 'dark'
 } 
+
+export interface VoiceSettings {
+  preferredVoice: 'elevenlabs' | 'browser';
+  speakingRate: number;
+  volume: number;
+  useIndianEnglish: boolean;
+} 

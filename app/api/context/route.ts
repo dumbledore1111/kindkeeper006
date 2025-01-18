@@ -1,91 +1,77 @@
-// File: app/api/category/route.ts--- this is for category creation
+// File: app/api/category/route.ts
 
 import { NextResponse } from 'next/server'
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
 import { cookies } from 'next/headers'
-import { CategoryManager } from '@/lib/category-manager'
-import { supabase } from '@/lib/supabase'
+import { ContextEngine } from '@/lib/context-engine'
 
-export async function POST(req: Request) {
+export async function POST(request: Request) {
   const supabase = createRouteHandlerClient({ cookies })
   
   try {
-    const { userId, input } = await req.json()
-
-    if (!userId) {
+    // Check auth
+    const { data: { session } } = await supabase.auth.getSession()
+    
+    if (!session) {
       return NextResponse.json({ 
-        success: false, 
-        error: 'User ID is required' 
-      }, { status: 400 })
+        success: false,
+        error: 'Not authenticated'
+      }, { status: 401 })
     }
 
-    const categoryManager = new CategoryManager()
-    const result = await categoryManager.createDynamicCategory(userId, input)
+    // Get request data
+    const { userId, message, context } = await request.json()
 
-    if (!result) {
+    // Verify user
+    if (userId !== session.user.id) {
       return NextResponse.json({
         success: false,
-        message: 'Could not identify category creation intent'
-      }, { status: 400 })
+        error: 'User ID mismatch'
+      }, { status: 403 })
     }
+
+    // Process with context engine
+    const contextEngine = new ContextEngine(userId)
+    const result = await contextEngine.processInput(message, context)
 
     return NextResponse.json({
       success: true,
-      message: `Created new category "${result.name}"`,
-      data: result
+      response: result.response,
+      context: result.context,
+      needsMoreInfo: result.needsMoreInfo,
+      intent: result.intent,
+      dbOperations: result.dbOperations
     })
 
   } catch (error) {
-    console.error('Category creation error:', error)
+    console.error('API Error:', error)
     return NextResponse.json({
       success: false,
-      message: 'Failed to create category',
       error: error instanceof Error ? error.message : 'Unknown error'
     }, { status: 500 })
   }
 }
 
-// For getting category suggestions
-export async function GET(req: Request) {
+export async function GET(request: Request) {
+  const supabase = createRouteHandlerClient({ cookies })
+  
   try {
-    const { searchParams } = new URL(req.url)
-    const text = searchParams.get('text')
-    const userId = searchParams.get('userId')
-
-    if (!text || !userId) {
-      return NextResponse.json({
-        success: false,
-        error: 'Missing required parameters'
-      }, { status: 400 })
+    const { data: { session } } = await supabase.auth.getSession()
+    
+    if (!session) {
+      return new NextResponse(
+        JSON.stringify({ error: 'Not authenticated' }),
+        { status: 401 }
+      )
     }
 
-    const categoryManager = new CategoryManager()
-    
-    // Get existing categories for this user
-    const { data: existingCategories } = await supabase
-      .from('custom_categories')
-      .select('*')
-      .eq('user_id', userId);
-
-      if (!existingCategories) {
-        return NextResponse.json({
-          success: true,
-          data: [] // Return empty suggestions if no existing categories
-        });
-      }
-
-    const suggestions = await categoryManager.suggestCategorization(text, existingCategories)
-
-    return NextResponse.json({
-      success: true,
-      data: suggestions
-    })
-
+    // Your existing context logic here
+    return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('Category suggestion error:', error)
-    return NextResponse.json({
-      success: false,
-      error: 'Failed to get category suggestions'
-    }, { status: 500 })
+    console.error('API error:', error)
+    return new NextResponse(
+      JSON.stringify({ error: 'Internal server error' }),
+      { status: 500 }
+    )
   }
 }

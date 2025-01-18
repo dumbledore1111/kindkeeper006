@@ -1,131 +1,90 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
+import { Button } from "@/components/ui/button"
+import { AccountPanel } from "@/components/account-panel"
+import { BookPanel } from "@/components/book-panel"
+import { ChatPanel } from "@/components/chat-panel"
 import { useRouter } from 'next/navigation'
-import { ThemeButton } from './ui/theme-button'
-import { ThemeCard } from './ui/theme-card'
-import { AccountPanel } from './account-panel'
-import { BookPanel } from './book-panel'
-import { ChatPanel } from './chat-panel'
-import { supabase } from '@/lib/supabase'
 import { useSettings } from '@/contexts/SettingsContext'
-
-export type AppSettings = {
-  textSize: 'small' | 'medium' | 'large'
-  volume: number
-  currency: string
-  language: string
-  voiceType: string
-  theme: 'light' | 'dark'
-}
+import { BookOpen, User } from 'lucide-react'
+import { supabase } from '@/lib/supabase'
+import { useAuth } from '@/hooks/useAuth'
 
 export default function Dashboard() {
-  const router = useRouter()
   const [showAccount, setShowAccount] = useState(false)
   const [showBook, setShowBook] = useState(false)
   const [showChat, setShowChat] = useState(false)
-  const [appSettings, setAppSettings] = useState<AppSettings | null>(null)
-  const [loading, setLoading] = useState(true)
+  const router = useRouter()
   const { settings } = useSettings()
-
-  useEffect(() => {
-    const loadSettings = async () => {
-      try {
-        const { data: { user } } = await supabase.auth.getUser()
-        if (!user) {
-          router.push('/login')
-          return
-        }
-
-        const { data: settings, error } = await supabase
-          .from('user_settings')
-          .select('*')
-          .eq('user_id', user.id)
-          .single()
-
-        if (settings) {
-          setAppSettings(settings)
-        }
-      } catch (error) {
-        console.error('Error:', error)
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    loadSettings()
-  }, [router])
-
-  const handleSignOut = async () => {
-    await supabase.auth.signOut()
-    router.push('/login')
-  }
-
-  if (loading) {
-    return <div>Loading...</div>
-  }
+  const { session } = useAuth()
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center 
-      transition-colors duration-300
-      dark:bg-dark-background bg-light-background 
-      dark:text-dark-text text-light-text">
-      <div className="flex flex-col md:flex-row items-center gap-8 md:gap-12">
-        <ThemeButton
-          onClick={() => setShowAccount(true)}
-          className="order-1 md:order-none w-32 h-32 rounded-full 
-            bg-gradient-to-b from-[#00E676] via-[#76FF03] to-[#FFEB3B] 
-            animate-theme-glow"
-        >
-          ACCOUNT
-        </ThemeButton>
+    <div className="min-h-screen w-full flex items-center justify-center bg-black">
+      {/* Mobile container */}
+      <div className="w-[400px] h-[700px] rounded-3xl border border-gray-200 bg-white shadow-xl p-6 relative">
+        {/* Top bar */}
+        <div className="flex justify-between items-center">
+          <span className="text-orange-500 text-xl font-medium">kindkeeper</span>
+          <div className="flex gap-3">
+            <Button
+              onClick={() => setShowBook(true)}
+              className="h-12 w-12 rounded-full bg-cyan-400 hover:bg-cyan-500 text-white 
+                flex items-center justify-center transition-all duration-300"
+            >
+              <BookOpen className="w-6 h-6" />
+            </Button>
+            <Button
+              onClick={() => setShowAccount(true)}
+              className="h-12 w-12 rounded-full bg-orange-400 hover:bg-orange-500 text-white
+                flex items-center justify-center transition-all duration-300"
+            >
+              <User className="w-6 h-6" />
+            </Button>
+          </div>
+        </div>
 
-        <ThemeButton
-          onClick={() => setShowChat(true)}
-          className="order-2 md:order-none w-40 h-40 rounded-full 
-            bg-gradient-to-b from-[#FFD600] via-[#FF6D00] to-[#FF1744] 
-            animate-theme-glow"
-        >
-          HELLO
-        </ThemeButton>
+        {/* Center Hello Button - Adjusted positioning */}
+        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
+          <Button
+            onClick={() => setShowChat(true)}
+            className="w-32 h-32 rounded-full 
+              bg-gradient-to-b from-orange-400 to-orange-600
+              text-white font-bold text-xl 
+              shadow-lg shadow-orange-500/50 
+              hover:shadow-orange-500/70 hover:scale-105 
+              transition-all duration-300"
+          >
+            HELLO
+          </Button>
+        </div>
 
-        <ThemeButton
-          onClick={() => setShowBook(true)}
-          className="order-3 md:order-none w-32 h-32 rounded-full 
-            bg-gradient-to-b from-[#00E5FF] via-[#00B8D4] to-[#FF9800] 
-            animate-theme-glow"
-        >
-          BOOK
-        </ThemeButton>
-      </div>
-
-      {showAccount && (
-        <ThemeCard animate className="fixed inset-0 m-4 md:m-8">
+        {/* Panels */}
+        {showAccount && (
           <AccountPanel 
             open={showAccount} 
             onClose={() => setShowAccount(false)}
-            onSignOut={handleSignOut}
+            onSignOut={async () => {
+              await supabase.auth.signOut()
+              await router.push('/login')
+            }}
           />
-        </ThemeCard>
-      )}
+        )}
 
-      {showBook && (
-        <ThemeCard animate className="fixed inset-0 m-4 md:m-8">
-          <BookPanel
-            open={showBook}
+        {showBook && (
+          <BookPanel 
+            open={showBook} 
             onClose={() => setShowBook(false)}
           />
-        </ThemeCard>
-      )}
+        )}
 
-      {showChat && (
-        <ThemeCard animate className="fixed inset-0 m-4 md:m-8">
-          <ChatPanel
-            open={showChat}
+        {showChat && (
+          <ChatPanel 
+            open={showChat} 
             onClose={() => setShowChat(false)}
           />
-        </ThemeCard>
-      )}
+        )}
+      </div>
     </div>
   )
 }

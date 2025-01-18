@@ -1,18 +1,19 @@
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
-import { Database } from '@/types/database'
+import { createClient } from '@supabase/supabase-js';
+import type { Database } from '@/types/database';
 
-if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
-  throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL')
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error('Missing Supabase environment variables')
 }
 
-if (!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-  throw new Error('Missing NEXT_PUBLIC_SUPABASE_ANON_KEY')
-}
-
-// Create a single supabase client for interacting with your database
-const supabase = createClientComponentClient()
-
-export { supabase }
+export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+  }
+});
 
 export async function signUp(email: string, password: string, name: string) {
   try {
@@ -35,12 +36,24 @@ export async function signUp(email: string, password: string, name: string) {
 
     // Create profile entry
     if (data.user) {
+      // Insert into profiles table
       await supabase
         .from('profiles')
         .insert({
           id: data.user.id,
           full_name: name,
-          email: email
+          updated_at: new Date().toISOString()
+        })
+
+      // Insert into user_profiles table
+      await supabase
+        .from('user_profiles')
+        .insert({
+          id: data.user.id,
+          email: email,
+          name: name,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
         })
     }
 
@@ -52,7 +65,7 @@ export async function signUp(email: string, password: string, name: string) {
     console.error('SignUp error:', err)
     return {
       user: null,
-      error: err instanceof Error ? err.message : 'Failed to sign up'
+      error: 'An error occurred during sign up'
     }
   }
 }

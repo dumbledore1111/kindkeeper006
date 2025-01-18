@@ -1,12 +1,17 @@
 import { supabase } from '@/lib/supabase'
 import type { Transaction, CategoryType } from '@/types/database'
 
+// Add interface to include categories
+interface TransactionUpdate extends Partial<Transaction> {
+  categories?: CategoryType[];
+}
+
 export async function updateTransaction(
   id: string,
   userId: string,
-  updates: Partial<Transaction>
+  updates: TransactionUpdate  // Use new interface instead of Partial<Transaction>
 ) {
-  const { categories, ...transactionUpdates } = updates
+  const { categories, ...transactionUpdates } = updates;
 
   // Start a transaction
   const { data, error } = await supabase.rpc('update_transaction', {
@@ -14,13 +19,13 @@ export async function updateTransaction(
     p_user_id: userId,
     p_updates: transactionUpdates,
     p_categories: categories
-  })
+  });
 
   if (error) {
-    throw new Error(`Failed to update transaction: ${error.message}`)
+    throw new Error(`Failed to update transaction: ${error.message}`);
   }
 
-  return data
+  return data;
 }
 
 // Add this stored procedure to your Supabase database:

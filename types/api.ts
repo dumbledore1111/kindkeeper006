@@ -38,6 +38,7 @@ export interface ApiResponse {
       context: string
     }
     data?: any
+    dbOperations?: DatabaseOperationStatus[]
   }
   
   // New Additions:
@@ -79,4 +80,17 @@ export interface ApiResponse {
     type: 'microphone' | 'network' | 'transcription' | 'unknown';
     message: string;
     shouldRetry: boolean;
+  }
+  
+  export interface DatabaseOperationStatus {
+    operation: string;
+    timestamp: string;
+    success: boolean;
+    error?: string;
+    data?: {
+      categoryId?: string;
+      suggestionCount?: number;
+      messageLength?: number;
+      [key: string]: any;  // For any other data we might want to track
+    };
   }

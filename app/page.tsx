@@ -1,5 +1,5 @@
-import { redirect } from 'next/navigation'
+import KindKeeperLandingPage from '@/components/landing-page'
 
 export default function Home() {
-  redirect('/login')
+  return <KindKeeperLandingPage />
 }

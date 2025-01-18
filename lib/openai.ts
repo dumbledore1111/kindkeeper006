@@ -11,28 +11,48 @@ import { parseDateFromText } from './date-parser'
 import type { 
   Transaction, 
   EventRelationship,
-  StructuredContext // if you have this defined in database types
+  StructuredContext 
 } from '@/types/database'
 
-// After your existing imports, add:
-interface StructuredContext {
-  recentTransactions: Transaction[];
-  patterns: {
-    recurring: any[];
-    related: any[];
-    sequential: any[];
-  };
-  relationships: EventRelationship[];
-  userPreferences: any;
-  historicalQueries: {
-    query: string;
-    response: string;
-    timestamp: Date;
-  }[];
-}
 export const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 })
+
+export const SYSTEM_PROMPTS = {
+  default: `You are a friendly financial assistant for senior citizens in India. Keep responses short and direct.
+
+RULES:
+- Keep responses under 15 words unless clarifying something
+- Ask only ONE question when something is unclear
+- Use Indian Rupees (₹)
+- Be patient and empathetic
+- Speak respectfully as to an elder
+- Use simple language
+- If speech recognition might have errors, ask for confirmation
+- Consider patterns in user's transaction history
+- Reference related transactions when relevant
+- Be aware of recurring payments and schedules
+- Detect and handle multiple intents in a single message
+- Consider context from previous conversations
+
+Return JSON in format:
+{
+  "intent": "TRANSACTION" | "ATTENDANCE" | "REMINDER" | "QUERY",
+  "confidence": number,
+  "entities": {
+    "amount": number | null,
+    "category": string | null,
+    "date": string | null,
+    "type": string | null
+  }
+}`,
+
+  transaction: `You are a financial assistant...`,
+  attendance: `You are helping track attendance...`,
+  reminder: `You are helping set reminders...`,
+  query: `You are helping answer queries...`,
+  unknown: `You are a helpful assistant...`
+};
 
 const TRANSACTION_PROMPT = `You are a friendly financial assistant for senior citizens in India. Keep responses short and direct.
 
@@ -95,7 +115,6 @@ Return JSON in format:
   } or null
 }`
 
-// Add category creation prompt
 const CATEGORY_CREATION_PROMPT = `You are a financial assistant helping detect and process category creation requests. The user might want to create a custom category for tracking specific expenses.
 
 CATEGORY CREATION EXAMPLES:
@@ -134,7 +153,6 @@ RULES:
 6. Never create duplicate categories
 7. Ensure the category fits within the extended category types`;
 
-// Add getCurrentUserId function
 async function getCurrentUserId(): Promise<string> {
   // First try to get from supabase auth
   const { data: { session } } = await supabase.auth.getSession();
@@ -152,78 +170,58 @@ async function getCurrentUserId(): Promise<string> {
   throw new Error('No user ID available');
 }
 
-// Update processChatCompletion to use async/await
-export async function processChatCompletion(message: string) {
+export async function processChatCompletion(inputMessage: string, context?: StructuredContext) {
   try {
     const userId = await getCurrentUserId();
     
-    // First, try pattern matching
-    const patternResult = processInput(message)
+    const patternResult = processInput(inputMessage);
     
     if (!patternResult.needs_clarification) {
-      return patternResult
+      return patternResult;
     }
 
-    export async function processChatCompletion(message: string, context?: StructuredContext) {
-      try {
-        const userId = await getCurrentUserId();
-        
-        // First, try pattern matching
-        const patternResult = processInput(message)
-        
-        if (!patternResult.needs_clarification) {
-          return patternResult
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4",
+      messages: [
+        { 
+          role: "system", 
+          content: inputMessage.toLowerCase().includes('category') ? 
+            CATEGORY_CREATION_PROMPT : 
+            TRANSACTION_PROMPT
+        },
+        { 
+          role: "user", 
+          content: JSON.stringify({
+            message: inputMessage,
+            context: context ? {
+              recentTransactions: context.recentTransactions,
+              patterns: context.patterns,
+              relationships: context.relationships
+            } : {}
+          })
         }
-    
-        const completion = await openai.chat.completions.create({
-          model: "gpt-4",
-          messages: [
-            { 
-              role: "system", 
-              content: message.toLowerCase().includes('category') ? 
-                CATEGORY_CREATION_PROMPT : 
-                TRANSACTION_PROMPT
-            },
-            { 
-              role: "user", 
-              content: JSON.stringify({
-                message,
-                context: context ? {
-                  recentTransactions: context.recentTransactions,
-                  patterns: context.patterns,
-                  relationships: context.relationships
-                } : {}
-              })
-            }
-          ],
-          response_format: { type: "json_object" }
-        });
-    
-        // Rest of your existing code...
-      } catch (error) {
-        console.error('Error in processChatCompletion:', error)
-        throw error
-      }
-    }
+      ],
+      response_format: { type: "json_object" }
+    });
 
-    if (!completion.choices[0].message.content) {
-      throw new Error('No response from OpenAI')
+    if (!completion.choices[0].message?.content) {
+      throw new Error('No response from OpenAI');
     }
     
-    const result = JSON.parse(completion.choices[0].message.content)
+    const result = JSON.parse(completion.choices[0].message.content);
     
     if (result.intent === 'create_category') {
-      const response = await fetch('/api/category', {
+      const categoryResponse = await fetch('/api/category', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId,
-          command: message,
+          command: inputMessage,
           categoryDetails: result.category
         })
       });
       
-      return response.json();
+      return categoryResponse.json();
     }
 
     if (result.understood) {

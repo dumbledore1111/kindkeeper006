@@ -1,16 +1,16 @@
 // File: types/database.ts
 
-export type TransactionType = 'income' | 'expense'
+export type TransactionType = 'expense' | 'income';
 
 export type CategoryType = 
   | 'groceries'
-  | 'home_utilities'
-  | 'miscellaneous'
   | 'bills'
-  | 'online_shopping'
-  | 'vehicle'
   | 'medical'
+  | 'vehicle'
+  | 'online_shopping'
+  | 'home_utilities'
   | 'logbook'
+  | 'miscellaneous';
 
 export type ServiceProviderType = 
   | 'maid'
@@ -164,6 +164,12 @@ export interface Intent {
   category?: CategoryType;
   action?: string;
   relatedEvents: string[];
+  transactionData?: {
+    amount: number;
+    type: TransactionType;
+    description: string;
+    category?: CategoryType;
+  };
 }
 
 export interface ContextLog {
@@ -178,12 +184,11 @@ export interface ContextLog {
 
 export interface EventRelationship {
   id: string;
+  user_id: string;
   primary_event_id: string;
-  primary_event_type: string;
   related_event_id: string;
-  related_event_type: string;
   relationship_type: string;
-  context?: any;
+  metadata?: Record<string, any>;
   created_at: Date;
 }
 
@@ -198,4 +203,104 @@ export interface Context {
     period?: string;
   };
   relatedEvents: string[];
+  analytics?: {
+    total: number;
+    count: number;
+    average: number;
+    highest: number;
+    lowest: number;
+  };
+  amount?: number;
 }
+
+export interface FormattedResponse {
+  text: string;
+  data?: any;
+  suggestions?: string[];
+  followUp?: string;
+}
+
+export interface ValidationResult {
+  needsMoreInfo: boolean;
+  missingInfo: string[];
+}
+
+export interface ProcessingResult {
+  intent: Intent;
+  context: Context;
+  needsMoreInfo: boolean;
+  suggestedResponse?: string;
+}
+
+export interface AttendanceLog {
+  id: string;
+  user_id: string;
+  provider_id: string;
+  date: Date;
+  present: boolean;
+  notes?: string;
+  linked_transaction_id?: string;
+  created_at: Date;
+}
+
+export interface StructuredContext {
+  recentTransactions: Transaction[];
+  patterns: {
+    recurring: any[];
+    related: any[];
+    sequential: any[];
+  };
+  relationships: EventRelationship[];
+  userPreferences: any;
+  historicalQueries: {
+    query: string;
+    response: string;
+    timestamp: Date;
+  }[];
+}
+
+export interface DatabaseOperationStatus {
+  success: boolean;
+  operation: string;
+  timestamp: string;
+  error?: any;
+  data?: any;
+  userId?: string;
+}
+
+export interface MonthlySummary {
+  id: string;
+  user_id: string;
+  month: Date;
+  total_income: number;
+  total_expenses: number;
+  savings: number;
+  category_breakdown: Record<string, number>;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface TransactionData {
+  amount: number;
+  type: 'expense' | 'income';
+  is_recurring: boolean;
+  description: string;
+  source_destination?: string;
+  payment_method?: string;
+  category?: CategoryType;
+  service_provider?: ServiceProvider;
+}
+
+export interface VoiceEntryData {
+  transcript: string;
+  amount: number;
+  category?: string;
+  description: string;
+  is_reminder: boolean;
+  date: Date;
+  due_date?: Date;
+}
+
+export interface UserContext {
+  userId: string;
+} 

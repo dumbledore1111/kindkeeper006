@@ -1,4 +1,8 @@
 import type { Transaction, CategoryType } from '@/types/database'
+import { ProcessorManager } from './processors/processor-manager'
+import { ContextEngine } from './context-engine'
+import { determineIntent } from './intent-analyzer'
+import { AIResponse } from '@/types/responses'
 
 interface ServiceProviderDetails {
   name?: string
@@ -174,7 +178,28 @@ function extractDate(input: string): Date | undefined {
   return new Date()
 }
 
-export function processUserInput(input: string): ProcessedInput {
+export async function processUserInput(input: string, userId: string) {
+  const processorManager = new ProcessorManager(userId)
+  const contextEngine = new ContextEngine(userId)
+  
+  // Get context
+  const context = await contextEngine.getCurrentContext()
+  
+  // Process with existing logic first
+  const processed = processInputInternal(input)
+  
+  // Then route through processor manager if needed
+  const intent = determineIntent(input, context)
+  const processorResult = await processorManager.route(intent, {
+    input,
+    context,
+    processed
+  })
+  
+  return processorResult
+}
+
+function processInputInternal(input: string): ProcessedInput {
   const lowerInput = input.toLowerCase()
   const amount = extractAmount(input)
   const type = detectTransactionType(lowerInput)
@@ -302,4 +327,32 @@ function formatUserResponse(
   parts.push('Anything else?')
 
   return parts.join(' ')
-} 
+}
+
+export const processAIMessage = async (userId: string, input: string): Promise<string | AIResponse> => {
+  try {
+    const contextEngine = new ContextEngine(userId);
+    
+    // Process input directly since processInput handles intent detection internally
+    const result = await contextEngine.processInput(input);
+
+    // Return either string response or AIResponse
+    if (typeof result.response === 'string') {
+      return result.response;
+    }
+
+    return {
+      intent: result.intent as 'transaction' | 'attendance' | 'reminder' | 'query' | 'general',
+      confidence: 0.8,
+      suggestedResponse: result.response,
+      needsMoreInfo: result.needsMoreInfo ? {
+        field: result.needsMoreInfo.type as 'amount' | 'date' | 'provider_name' | 'frequency' | 'description',
+        context: result.needsMoreInfo.context
+      } : undefined
+    };
+
+  } catch (error) {
+    console.error('Error processing AI message:', error);
+    return 'I apologize, but I encountered an error processing your request.';
+  }
+}; 

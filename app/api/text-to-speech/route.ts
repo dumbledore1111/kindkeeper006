@@ -1,23 +1,36 @@
 import { NextResponse } from 'next/server'
 import { logger } from '@/lib/logger'
 import { handleApiError } from '@/lib/error-handler'
-import type { ElevenLabsResponse } from '@/types/api'
+import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
+import { cookies } from 'next/headers'
 
 // Voice configuration constants
 const VOICE_CONFIG = {
-  INDIAN_VOICE_ID: '21m00Tcm4TlvDq8ikWAM', // Replace with your chosen Indian English voice ID
-  DEFAULT_STABILITY: 0.7,  // Increased for clearer speech
-  DEFAULT_SIMILARITY: 0.7,  // Balanced for natural sound
-  RATE_LIMIT: 10 // Requests per minute
+  INDIAN_VOICE_ID: '21m00Tcm4TlvDq8ikWAM',
+  DEFAULT_STABILITY: 0.7,
+  DEFAULT_SIMILARITY: 0.7,
+  RATE_LIMIT: 10
 }
 
 export async function POST(req: Request) {
   try {
-    const { 
-      text, 
-      responseType = 'simple',  // 'simple' | 'complex' | 'query' | 'error'
-      emotion = 'neutral'       // 'neutral' | 'concerned' | 'friendly'
-    } = await req.json()
+    // Check auth
+    const supabase = createRouteHandlerClient({ cookies })
+    const { data: { session } } = await supabase.auth.getSession()
+    
+    if (!session) {
+      return NextResponse.json({ 
+        success: false,
+        error: 'Not authenticated'
+      }, { status: 401 })
+    }
+
+    // Verify ElevenLabs API key
+    if (!process.env.ELEVENLABS_API_KEY) {
+      throw new Error('ElevenLabs API key not configured')
+    }
+
+    const { text, responseType = 'simple', emotion = 'neutral' } = await req.json()
 
     // Voice settings based on response type
     const voiceSettings = getVoiceSettings(responseType, emotion)
@@ -28,18 +41,20 @@ export async function POST(req: Request) {
         method: 'POST',
         headers: {
           'Accept': 'audio/mpeg',
-          'xi-api-key': process.env.ELEVENLABS_API_KEY!,
+          'xi-api-key': process.env.ELEVENLABS_API_KEY,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           text: prepareText(text, responseType),
-          model_id: 'eleven_multilingual_v2', // Using multilingual model for better Indian English
+          model_id: 'eleven_multilingual_v2',
           voice_settings: voiceSettings
         }),
       }
     )
 
     if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}))
+      logger.error('ElevenLabs API error:', { status: response.status, error: errorData })
       throw new Error(`ElevenLabs API error: ${response.status}`)
     }
 
@@ -48,6 +63,7 @@ export async function POST(req: Request) {
     return new NextResponse(audioBuffer, {
       headers: {
         'Content-Type': 'audio/mpeg',
+        'Cache-Control': 'no-cache'
       },
     })
 

@@ -1,7 +1,12 @@
 import { useState, useCallback, useRef } from 'react'
 import type { WhisperResult, WhisperError } from '@/types/api'
 
-export function useWhisper() {
+interface UseWhisperProps {
+  onTranscript?: (text: string) => void;
+  authToken?: string;
+}
+
+export function useWhisper({ onTranscript, authToken }: UseWhisperProps = {}) {
   const [isRecording, setIsRecording] = useState(false)
   const [transcript, setTranscript] = useState('')
   const [error, setError] = useState<WhisperError | null>(null)
@@ -47,12 +52,18 @@ export function useWhisper() {
       mediaRecorder.addEventListener('stop', async () => {
         try {
           const audioBlob = new Blob(audioChunks, { type: 'audio/webm' })
-
           const formData = new FormData()
           formData.append('file', audioBlob, 'audio.webm')
 
+          // Add proper headers including Content-Type for FormData
+          const headers: Record<string, string> = {}
+          if (authToken) {
+            headers['Authorization'] = `Bearer ${authToken}`
+          }
+
           const response = await fetch('/api/whisper', {
             method: 'POST',
+            headers,
             body: formData
           })
 
@@ -74,6 +85,9 @@ export function useWhisper() {
               .replace(/^\s+|\s+$/g, "")
 
             setTranscript(cleanedText)
+            if (onTranscript) {
+              onTranscript(cleanedText)
+            }
             setError(null)
           } else {
             throw {
@@ -84,11 +98,7 @@ export function useWhisper() {
           }
         } catch (err) {
           console.error('Transcription error:', err)
-          setError({
-            type: 'transcription',
-            message: err instanceof Error ? err.message : 'Failed to transcribe audio',
-            shouldRetry: true
-          })
+          setError(err as WhisperError)
         } finally {
           stream.getTracks().forEach(track => track.stop())
           setIsRecording(false)
@@ -118,7 +128,7 @@ export function useWhisper() {
       })
       setIsRecording(false)
     }
-  }, [])
+  }, [onTranscript, authToken])
 
   const stopRecording = useCallback(() => {
     if (mediaRecorderRef.current?.state === 'recording') {

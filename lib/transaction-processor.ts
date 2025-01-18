@@ -1,7 +1,7 @@
 // File: lib/transaction-processor.ts
 
 import type { 
-  Transaction,
+  Transaction, 
   CategoryType, 
   ServiceProviderType,
   TransactionType,

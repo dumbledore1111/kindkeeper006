@@ -60,10 +60,13 @@ export default function Login() {
     setError(null)
 
     try {
-      const { data: { session }, error } = await supabase.auth.signInWithPassword({
+      console.log('Attempting to sign in with:', email)
+      const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       })
+
+      console.log('Sign in response:', data, error)
 
       if (error) {
         console.error('Auth error:', error)
@@ -71,30 +74,22 @@ export default function Login() {
         return
       }
 
-      if (session) {
-        console.log('Session created:', session)
+      if (data.session) {
+        console.log('Session created:', data.session)
 
-        // Store session in localStorage
-        localStorage.setItem('supabase.auth.token', session.access_token)
-        
         if (rememberMe) {
           localStorage.setItem('savedEmail', email)
         } else {
           localStorage.removeItem('savedEmail')
         }
 
-        // Wait for session to be set
-        await new Promise(resolve => setTimeout(resolve, 500))
-
-        // Use window.location for a full page reload
-        window.location.href = '/dashboard'
-      } else {
-        console.error('No session data returned')
-        setError('Login successful but no session created')
+        // Let auth context handle navigation
+        setLoading(false)
+        return
       }
     } catch (err) {
       console.error('Login error:', err)
-      setError('Failed to login')
+      setError('Failed to login. Please try again.')
     } finally {
       setLoading(false)
     }
@@ -112,7 +107,7 @@ export default function Login() {
       <div 
         className="absolute inset-0 w-full h-full bg-cover bg-center bg-no-repeat scale-110"
         style={{
-          backgroundImage: 'url("https://media.giphy.com/media/Es8b5pCWjqaFy0vBdg/giphy.gif")',
+          backgroundImage: 'url("/images/background.jpg")',
           filter: 'brightness(0.9) contrast(1.1)',
         }}
       />
@@ -129,20 +124,20 @@ export default function Login() {
             <p className="text-xl text-white/90">
               welcome back !
             </p>
-          </div>
+        </div>
 
-          {error && (
+        {error && (
             <div className="bg-red-500/20 text-red-200 p-3 rounded-full text-center text-base backdrop-blur-sm">
-              {error}
-            </div>
-          )}
+            {error}
+          </div>
+        )}
 
           <form onSubmit={handleSubmit} className="space-y-3">
             <div className="relative group transition-all duration-300">
-              <Input
-                type="email"
+            <Input
+              type="email"
                 placeholder="Current User's email"
-                value={email}
+              value={email}
                 onChange={(e) => {
                   setEmail(e.target.value)
                   if (formErrors.email) {
@@ -161,13 +156,13 @@ export default function Login() {
               {formErrors.email && (
                 <p className="text-red-200 text-sm mt-1 ml-2">{formErrors.email}</p>
               )}
-            </div>
+          </div>
 
             <div className="relative group transition-all duration-300">
-              <Input
+            <Input
                 type={showPassword ? "text" : "password"}
                 placeholder="Password"
-                value={password}
+              value={password}
                 onChange={(e) => {
                   setPassword(e.target.value)
                   if (formErrors.password) {
@@ -214,15 +209,21 @@ export default function Login() {
               >
                 Forgot password?
               </Link>
-            </div>
+          </div>
 
             <div className="flex gap-2">
               <AuthButton 
-                type="submit"
-                disabled={loading}
-                className="flex-1 bg-gradient-to-r from-white to-green-400 hover:to-green-500
-                  shadow-[0_2px_10px_rgba(0,0,0,0.1)]
-                  hover:shadow-[0_5px_20px_rgba(0,255,0,0.3)]"
+            type="submit"
+            disabled={loading}
+                className={`
+                  bg-gradient-to-r from-[#db984f] to-[#c17f3a] 
+                  hover:to-[#e6a661]
+                  hover:scale-[1.02] 
+                  hover:shadow-[0_0_40px_rgba(219,152,79,0.3)]
+                  hover:animate-pulse
+                  active:scale-95
+                  ${loading ? 'opacity-50' : ''}
+                `}
               >
                 {loading ? <Loader2 className="w-6 h-6 animate-spin" /> : 'ON'}
               </AuthButton>
@@ -237,7 +238,7 @@ export default function Login() {
                 <X size={20} />
               </button>
             </div>
-          </form>
+        </form>
 
           <div className="space-y-3 text-center">
             <p className="text-base text-white/80">Do not have an account! press sign up.</p>

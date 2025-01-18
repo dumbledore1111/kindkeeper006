@@ -12,7 +12,7 @@ import {
 } from '@/lib/database'
 import { logger } from '@/lib/logger'
 import { handleApiError } from '@/lib/error-handler'
-import type { Transaction, CategoryType } from '@/types/database'
+import type { Transaction, CategoryType, TransactionType } from '@/types/database'
 
 export async function POST(req: Request) {
   const supabase = createRouteHandlerClient({ cookies })
@@ -32,14 +32,16 @@ export async function POST(req: Request) {
 
     // Handle voice entry first
     if (result.voice_entry) {
-      await createVoiceEntry(userId, {
+      const voiceData = {
         transcript: result.voice_entry.transcript,
         amount: result.voice_entry.amount,
         category: result.voice_entry.category,
         description: result.voice_entry.description,
         is_reminder: result.voice_entry.is_reminder,
-        due_date: result.voice_entry.due_date
-      })
+        due_date: result.voice_entry.due_date,
+        date: new Date()
+      }
+      await createVoiceEntry(voiceData, { userId })
     }
 
     // If we need more information
@@ -56,11 +58,14 @@ export async function POST(req: Request) {
     if (result.transaction) {
       const transactionData = {
         amount: result.transaction.amount,
-        type: result.transaction.type,
-        description: result.transaction.description
+        type: result.transaction.type as 'expense' | 'income',
+        description: result.transaction.description,
+        is_recurring: false,
+        source_destination: result.transaction.source_destination,
+        payment_method: result.transaction.payment_method
       }
 
-      const transaction = await createTransaction(userId, transactionData)
+      const transaction = await createTransaction(transactionData, { userId })
 
       // If service provider present, handle attendance
       if (result.service_provider?.attendance && result.service_provider.name) {
@@ -134,11 +139,15 @@ export async function PATCH(req: Request) {
 
       // Create transaction from reminder if needed
       if (reminder.amount) {
-        await createTransaction(userId, {
+        const transactionData = {
           amount: reminder.amount,
-          type: 'expense',
-          description: reminder.title
-        })
+          type: 'expense' as const,
+          description: reminder.title,
+          is_recurring: false,
+          source_destination: reminder.source_destination,
+          payment_method: reminder.payment_method
+        }
+        await createTransaction(transactionData, { userId })
       }
 
       // Update reminder status

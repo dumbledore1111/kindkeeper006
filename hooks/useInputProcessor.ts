@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { processUserInput } from '@/lib/input-processor'
 import { createTransaction, createVoiceEntry } from '@/lib/database'
 import { useAssistant } from './useAssistant'
+import type { TransactionData, VoiceEntryData } from '@/types/database'
+import type { ProcessingResult } from '@/types/responses'
 
 export function useInputProcessor() {
   const [processing, setProcessing] = useState(false)
@@ -13,13 +15,17 @@ export function useInputProcessor() {
     setError(null)
 
     try {
-      const processed = processUserInput(input)
+      const processed = await processUserInput(input, userId)
 
       if (processed.needsMoreInfo) {
         const aiResponse = await getAIResponse(
           `I need more information: ${processed.needsMoreInfo.context}. Can you please provide ${processed.needsMoreInfo.type}?`
         )
         return { needsMoreInfo: true, message: aiResponse }
+      }
+
+      if (!processed.dbOperations) {
+        return { success: false, message: 'Could not process the input' }
       }
 
       const transactionOperation = processed.dbOperations.find(
@@ -30,26 +36,28 @@ export function useInputProcessor() {
         // Process database operations
         for (const operation of processed.dbOperations) {
           if (operation.table === 'transactions') {
-            await createTransaction({
+            const transactionData: TransactionData = {
               amount: operation.data.amount,
               type: operation.data.type,
               is_recurring: operation.data.is_recurring || false,
               description: operation.data.description,
               source_destination: operation.data.source_destination,
               payment_method: operation.data.payment_method
-            })
+            }
+            await createTransaction(transactionData, { userId })
           }
         }
 
-        // Save voice entry
-        await createVoiceEntry({
+        // Save voice entry with user context
+        const voiceData: VoiceEntryData = {
           transcript: input,
           amount: transactionOperation.data.amount,
           category: transactionOperation.data.category,
           description: transactionOperation.data.description,
           is_reminder: processed.dbOperations.some(op => op.table === 'reminders'),
           date: new Date()
-        })
+        }
+        await createVoiceEntry(voiceData, { userId })
 
         // Get AI confirmation
         const aiResponse = await getAIResponse(

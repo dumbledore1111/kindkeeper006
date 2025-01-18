@@ -47,7 +47,7 @@ export default function Signup() {
       <div 
         className="absolute inset-0 w-full h-full bg-cover bg-center bg-no-repeat scale-110"
         style={{
-          backgroundImage: 'url("https://media.giphy.com/media/Es8b5pCWjqaFy0vBdg/giphy.gif")',
+          backgroundImage: 'url("/images/background.jpg")',
           filter: 'brightness(0.9) contrast(1.1)',
         }}
       />

@@ -40,30 +40,35 @@ interface CreateCategoryParams {
 
 export class CategoryManager {
   private async extractCategoryIntent(text: string): Promise<CategoryCreationDetails | null> {
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4",
-      messages: [
-        {
-          role: "system",
-          content: `Extract category creation details from user input.
-            If input is about creating a category, return structured data.
-            Examples:
-            "Track renovation expenses" -> home improvement category
-            "Create category for mom's medical bills" -> person-specific medical category
-            "All expenses for my Europe trip next month" -> temporary travel category
-            `
-        },
-        { role: "user", content: text }
-      ],
-      response_format: { type: "json_object" }
-    });
+    try {
+      const completion = await openai.chat.completions.create({
+        model: "gpt-3.5-turbo",
+        messages: [
+          {
+            role: "system",
+            content: `Extract category creation details from user input.
+              If input is about creating a category, return structured data.
+              Examples:
+              "Track renovation expenses" -> home improvement category
+              "Create category for mom's medical bills" -> person-specific medical category
+              "All expenses for my Europe trip next month" -> temporary travel category
+              `
+          },
+          { role: "user", content: text }
+        ],
+        temperature: 0.7,
+      });
 
-    if (!completion.choices[0].message?.content) {
-      return null;
+      if (!completion.choices[0].message?.content) {
+        return null;
+      }
+
+      const result = JSON.parse(completion.choices[0].message.content);
+      return result.isCategory ? result.details : null;
+    } catch (error) {
+      console.error('Category extraction error:', error);
+      throw error;
     }
-
-    const result = JSON.parse(completion.choices[0].message.content);
-    return result.isCategory ? result.details : null;
   }
 
   async createDynamicCategory(userId: string, input: string) {

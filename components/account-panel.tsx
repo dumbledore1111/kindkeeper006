@@ -5,10 +5,11 @@ import { Sheet, SheetContent } from "@/components/ui/sheet"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useRouter } from 'next/navigation'
-import { Phone, Plus, Settings, Save, X, Edit, Trash2 } from 'lucide-react'
+import { Phone, Plus, Settings, Save, X, Edit, Trash2, ArrowLeft } from 'lucide-react'
 import { Popover, PopoverTrigger } from "@/components/ui/popover"
 import { SettingsPopup, AppSettings } from './settings-popup'
 import { supabase } from '@/lib/supabase'
+import { Dialog, DialogContent } from "@/components/ui/dialog"
 
 interface EmergencyContact {
   id: string;
@@ -128,6 +129,7 @@ export function AccountPanel({ open, onClose, onSignOut }: AccountPanelProps) {
           .select('*')
           .eq('user_id', session.user.id)
           .single()
+          .throwOnError();
 
         if (contacts) {
           setEmergencyContacts(contacts)
@@ -161,8 +163,8 @@ export function AccountPanel({ open, onClose, onSignOut }: AccountPanelProps) {
         })
 
       if (!error) {
-        setSavedPhone(phoneNumber)
-        setIsEditingPhone(false)
+    setSavedPhone(phoneNumber)
+    setIsEditingPhone(false)
       }
     }
   }
@@ -208,14 +210,14 @@ export function AccountPanel({ open, onClose, onSignOut }: AccountPanelProps) {
         .eq('id', editingEmergencyContactId)
 
       if (!error) {
-        setEmergencyContacts(emergencyContacts.map(contact => 
-          contact.id === editingEmergencyContactId 
-            ? { ...newEmergencyContact, id: contact.id }
-            : contact
-        ))
-        setNewEmergencyContact({ name: '', relationship: '', phoneNumber: '' })
-        setIsAddingEmergencyContact(false)
-        setEditingEmergencyContactId(null)
+      setEmergencyContacts(emergencyContacts.map(contact => 
+        contact.id === editingEmergencyContactId 
+          ? { ...newEmergencyContact, id: contact.id }
+          : contact
+      ))
+      setNewEmergencyContact({ name: '', relationship: '', phoneNumber: '' })
+      setIsAddingEmergencyContact(false)
+      setEditingEmergencyContactId(null)
       }
     }
   }
@@ -227,7 +229,7 @@ export function AccountPanel({ open, onClose, onSignOut }: AccountPanelProps) {
       .eq('id', id)
 
     if (!error) {
-      setEmergencyContacts(emergencyContacts.filter(contact => contact.id !== id))
+    setEmergencyContacts(emergencyContacts.filter(contact => contact.id !== id))
     }
   }
 
@@ -272,14 +274,14 @@ export function AccountPanel({ open, onClose, onSignOut }: AccountPanelProps) {
         .eq('id', editingBankAccountId)
 
       if (!error) {
-        setBankAccounts(bankAccounts.map(account => 
-          account.id === editingBankAccountId 
+      setBankAccounts(bankAccounts.map(account => 
+        account.id === editingBankAccountId 
             ? { ...account, ...newBankAccount }
-            : account
-        ))
+          : account
+      ))
         setNewBankAccount({ bank_name: '', account_type: '', account_number: '' })
-        setIsAddingBankAccount(false)
-        setEditingBankAccountId(null)
+      setIsAddingBankAccount(false)
+      setEditingBankAccountId(null)
       }
     }
   }
@@ -291,50 +293,50 @@ export function AccountPanel({ open, onClose, onSignOut }: AccountPanelProps) {
       .eq('id', id)
 
     if (!error) {
-      setBankAccounts(bankAccounts.filter(account => account.id !== id))
+    setBankAccounts(bankAccounts.filter(account => account.id !== id))
     }
   }
 
   return (
-    <Sheet open={open} onOpenChange={onClose}>
-      <SheetContent 
-        side="left" 
-        className="w-[400px] bg-white text-black p-0 border-r-gray-300 overflow-y-auto"
-      >
-        {/* Header */}
-        <div className="flex justify-between items-center p-4 bg-gray-50 sticky top-0 z-10">
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="p-0 border-none bg-transparent">
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="w-[400px] h-[700px] rounded-3xl bg-white shadow-xl p-6 relative">
+            {/* Header with Back and Sign Out */}
+            <div className="flex justify-between items-center mb-4">
           <Button 
+                variant="ghost" 
+                size="icon" 
             onClick={onClose}
-            className="w-24 h-10 rounded-full bg-gradient-to-r from-orange-400 to-orange-500 
-                     text-black font-medium hover:from-orange-500 hover:to-orange-600 
-                     transition-colors border-0"
+                className="rounded-full hover:bg-gray-100 p-2"
           >
-            Back
+                <ArrowLeft className="h-12 w-12 text-gray-700" />
           </Button>
           <Button 
             onClick={handleLogout}
-            className="w-24 h-10 rounded-full bg-gradient-to-r from-orange-400 to-orange-500 
-                     text-black font-medium hover:from-orange-500 hover:to-orange-600 
-                     transition-colors border-0"
+                className="px-6 h-12 rounded-full bg-[#ff6b00] hover:bg-[#ff8533]
+                  text-white font-medium transition-all duration-300"
           >
-            Log Out
+                Sign Out
           </Button>
         </div>
 
+            {/* Content Area */}
+            <div className="flex-1 overflow-y-auto h-[calc(100%-80px)]">
         {/* Profile Info */}
-        <div className="p-6 bg-white mb-4 border-b border-gray-100">
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">
-            {user?.profile?.full_name || user?.user_metadata?.full_name || 'Loading...'}
-          </h2>
-          <p className="text-gray-600">
-            {user?.profile?.email || user?.email || 'Loading...'}
-          </p>
+              <div className="p-6 bg-white mb-4 border-b border-gray-100">
+                <h2 className="text-2xl font-bold text-gray-900 mb-2">
+                  {user?.profile?.full_name || user?.user_metadata?.full_name || 'Loading...'}
+                </h2>
+                <p className="text-gray-600">
+                  {user?.profile?.email || user?.email || 'Loading...'}
+                </p>
         </div>
 
         {/* Phone Number */}
         <div className="px-6 py-4">
           <div className="flex justify-between items-center mb-2">
-            <h3 className="text-lg font-semibold text-gray-900">Phone Number</h3>
+                  <h3 className="text-lg font-semibold text-gray-900">Phone Number</h3>
             {!isEditingPhone && !savedPhone && (
               <Button 
                 variant="ghost" 
@@ -355,7 +357,7 @@ export function AccountPanel({ open, onClose, onSignOut }: AccountPanelProps) {
                 placeholder="Enter phone number"
                 value={phoneNumber}
                 onChange={(e) => setPhoneNumber(e.target.value)}
-                className="bg-gray-50 border-gray-200 text-gray-900"
+                      className="bg-gray-50 border-gray-200 text-gray-900"
               />
               <div className="flex gap-2">
                 <Button 
@@ -376,7 +378,7 @@ export function AccountPanel({ open, onClose, onSignOut }: AccountPanelProps) {
             </div>
           ) : (
             <div className="flex justify-between items-center">
-              <p className="text-gray-600">
+                    <p className="text-gray-600">
                 {savedPhone || 'No phone number added'}
               </p>
               {savedPhone && (
@@ -395,13 +397,13 @@ export function AccountPanel({ open, onClose, onSignOut }: AccountPanelProps) {
 
         {/* Emergency Contacts */}
         <div className="px-6 py-4 border-t border-gray-800">
-          <h3 className="text-lg font-semibold text-white mb-4">Emergency Contacts</h3>
+                <h3 className="text-lg font-semibold text-white mb-4">Emergency Contacts</h3>
           {emergencyContacts.map((contact) => (
-            <div key={contact.id} className="mb-4 p-3 bg-gray-50 rounded-lg flex justify-between items-start">
+                  <div key={contact.id} className="mb-4 p-3 bg-gray-50 rounded-lg flex justify-between items-start">
               <div>
-                <p className="font-medium text-gray-900">{contact.name}</p>
-                <p className="text-sm text-gray-600">{contact.relationship}</p>
-                <p className="text-sm text-gray-600">{contact.phoneNumber}</p>
+                      <p className="font-medium text-gray-900">{contact.name}</p>
+                      <p className="text-sm text-gray-600">{contact.relationship}</p>
+                      <p className="text-sm text-gray-600">{contact.phoneNumber}</p>
               </div>
               <div className="flex gap-2">
                 <Button
@@ -429,19 +431,19 @@ export function AccountPanel({ open, onClose, onSignOut }: AccountPanelProps) {
                 placeholder="Name"
                 value={newEmergencyContact.name}
                 onChange={(e) => setNewEmergencyContact({...newEmergencyContact, name: e.target.value})}
-                className="bg-gray-50 border-gray-200 text-gray-900"
+                      className="bg-gray-50 border-gray-200 text-gray-900"
               />
               <Input
                 placeholder="Relationship"
                 value={newEmergencyContact.relationship}
                 onChange={(e) => setNewEmergencyContact({...newEmergencyContact, relationship: e.target.value})}
-                className="bg-gray-50 border-gray-200 text-gray-900"
+                      className="bg-gray-50 border-gray-200 text-gray-900"
               />
               <Input
                 placeholder="Phone Number"
                 value={newEmergencyContact.phoneNumber}
                 onChange={(e) => setNewEmergencyContact({...newEmergencyContact, phoneNumber: e.target.value})}
-                className="bg-gray-50 border-gray-200 text-gray-900"
+                      className="bg-gray-50 border-gray-200 text-gray-900"
               />
               <div className="flex gap-2">
                 <Button 
@@ -476,19 +478,19 @@ export function AccountPanel({ open, onClose, onSignOut }: AccountPanelProps) {
 
         {/* Bank Accounts */}
         <div className="px-6 py-4 border-t border-gray-800">
-          <h3 className="text-lg font-semibold text-white mb-4">Bank Accounts</h3>
+                <h3 className="text-lg font-semibold text-white mb-4">Bank Accounts</h3>
           {bankAccounts.map((account) => (
-            <div key={account.id} className="mb-4 p-3 bg-gray-50 rounded-lg flex justify-between items-start">
+                  <div key={account.id} className="mb-4 p-3 bg-gray-50 rounded-lg flex justify-between items-start">
               <div>
-                <p className="font-medium text-gray-900">
-                  {account.bank_name}
-                </p>
-                <p className="text-sm text-gray-600">
-                  {account.account_type}
-                </p>
-                <p className="text-sm text-gray-600">
-                  ****{account.account_number?.slice(-4)}
-                </p>
+                      <p className="font-medium text-gray-900">
+                        {account.bank_name}
+                      </p>
+                      <p className="text-sm text-gray-600">
+                        {account.account_type}
+                      </p>
+                      <p className="text-sm text-gray-600">
+                        ****{account.account_number?.slice(-4)}
+                      </p>
               </div>
               <div className="flex gap-2">
                 <Button
@@ -514,21 +516,21 @@ export function AccountPanel({ open, onClose, onSignOut }: AccountPanelProps) {
             <div className="space-y-2 mb-4">
               <Input
                 placeholder="Bank Name"
-                value={newBankAccount.bank_name}
-                onChange={(e) => setNewBankAccount({...newBankAccount, bank_name: e.target.value})}
-                className="bg-gray-50 border-gray-200 text-gray-900"
+                      value={newBankAccount.bank_name}
+                      onChange={(e) => setNewBankAccount({...newBankAccount, bank_name: e.target.value})}
+                      className="bg-gray-50 border-gray-200 text-gray-900"
               />
               <Input
                 placeholder="Account Type"
-                value={newBankAccount.account_type}
-                onChange={(e) => setNewBankAccount({...newBankAccount, account_type: e.target.value})}
-                className="bg-gray-50 border-gray-200 text-gray-900"
+                      value={newBankAccount.account_type}
+                      onChange={(e) => setNewBankAccount({...newBankAccount, account_type: e.target.value})}
+                      className="bg-gray-50 border-gray-200 text-gray-900"
               />
               <Input
                 placeholder="Account Number"
-                value={newBankAccount.account_number}
-                onChange={(e) => setNewBankAccount({...newBankAccount, account_number: e.target.value})}
-                className="bg-gray-50 border-gray-200 text-gray-900"
+                      value={newBankAccount.account_number}
+                      onChange={(e) => setNewBankAccount({...newBankAccount, account_number: e.target.value})}
+                      className="bg-gray-50 border-gray-200 text-gray-900"
               />
               <div className="flex gap-2">
                 <Button 
@@ -543,7 +545,7 @@ export function AccountPanel({ open, onClose, onSignOut }: AccountPanelProps) {
                   onClick={() => {
                     setIsAddingBankAccount(false)
                     setEditingBankAccountId(null)
-                    setNewBankAccount({ bank_name: '', account_type: '', account_number: '' })
+                          setNewBankAccount({ bank_name: '', account_type: '', account_number: '' })
                   }}
                   className="border-gray-700 text-gray-300 hover:bg-gray-800"
                 >
@@ -581,8 +583,11 @@ export function AccountPanel({ open, onClose, onSignOut }: AccountPanelProps) {
             />
           </Popover>
         </div>
-      </SheetContent>
-    </Sheet>
+            </div>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   )
 }
 
