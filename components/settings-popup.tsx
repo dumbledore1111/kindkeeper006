@@ -12,12 +12,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { useSettings } from '@/contexts/SettingsContext'
-
-interface SettingsPopupProps {
-  onSettingsChange: (settings: AppSettings) => void;
-  initialSettings: AppSettings;
-}
+import { supabase } from '@/lib/supabase'
+import { logger } from '@/lib/logger'
 
 export interface AppSettings {
   textSize: 'small' | 'medium' | 'large';
@@ -28,16 +24,17 @@ export interface AppSettings {
   theme: 'dark' | 'light';
 }
 
+interface SettingsPopupProps {
+  onSettingsChange: (settings: AppSettings) => void;
+  initialSettings: AppSettings;
+}
+
 export function SettingsPopup({ onSettingsChange, initialSettings }: SettingsPopupProps) {
-  const { settings, updateSettings } = useSettings()
   const [localSettings, setLocalSettings] = useState<AppSettings>(initialSettings)
 
   const handleThemeChange = async (theme: 'light' | 'dark') => {
     // Update local state
     setLocalSettings(prev => ({ ...prev, theme }))
-    
-    // Update global settings
-    await updateSettings({ theme })
     
     // Apply theme class to html element
     if (theme === 'dark') {
@@ -49,6 +46,30 @@ export function SettingsPopup({ onSettingsChange, initialSettings }: SettingsPop
 
   const handleSettingChange = (key: keyof AppSettings, value: any) => {
     setLocalSettings(prev => ({ ...prev, [key]: value }))
+  }
+
+  const handleSave = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      
+      if (session?.user) {
+        const { error } = await supabase
+          .from('user_settings')
+          .upsert({
+            user_id: session.user.id,
+            ...localSettings,
+            updated_at: new Date().toISOString()
+          })
+
+        if (error) {
+          throw error
+        }
+
+        onSettingsChange(localSettings)
+      }
+    } catch (error) {
+      logger.error('Failed to save settings:', error)
+    }
   }
 
   return (
@@ -115,7 +136,7 @@ export function SettingsPopup({ onSettingsChange, initialSettings }: SettingsPop
                     h-10 rounded-md capitalize
                     ${localSettings.textSize === size 
                       ? 'bg-orange-500 text-white' 
-                      : localSettings.theme
+                      : localSettings.theme === 'dark'
                         ? 'bg-[#2a3447] text-gray-200 hover:bg-[#3a4457]'
                         : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}
                   `}
@@ -190,7 +211,7 @@ export function SettingsPopup({ onSettingsChange, initialSettings }: SettingsPop
         </div>
 
         <Button 
-          onClick={() => onSettingsChange(localSettings)}
+          onClick={handleSave}
           className="w-full h-10 bg-orange-500 hover:bg-orange-600 text-white font-medium rounded-md"
         >
           Save Settings

@@ -25,6 +25,18 @@ export class ProcessorManager {
     if (!processor) {
       throw new Error(`No processor found for intent: ${intent}`);
     }
-    return processor.process(data, context);
+
+    switch (intent) {
+      case 'transaction':
+        return processor.processTransaction(data, context);
+      case 'attendance':
+        return processor.process(data, context);
+      case 'reminder':
+        return processor.processReminder(data, context);
+      case 'query':
+        return processor.processQuery(data, context);
+      default:
+        throw new Error(`Unsupported intent type: ${intent}`);
+    }
   }
 } 

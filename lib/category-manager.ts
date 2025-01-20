@@ -39,6 +39,12 @@ interface CreateCategoryParams {
 }
 
 export class CategoryManager {
+  private cleanOpenAIResponse(content: string): string {
+    // Remove markdown code block formatting if present
+    const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/);
+    return jsonMatch ? jsonMatch[1].trim() : content.trim();
+  }
+
   private async extractCategoryIntent(text: string): Promise<CategoryCreationDetails | null> {
     try {
       const completion = await openai.chat.completions.create({
@@ -63,7 +69,8 @@ export class CategoryManager {
         return null;
       }
 
-      const result = JSON.parse(completion.choices[0].message.content);
+      const cleanedContent = this.cleanOpenAIResponse(completion.choices[0].message.content);
+      const result = JSON.parse(cleanedContent);
       return result.isCategory ? result.details : null;
     } catch (error) {
       console.error('Category extraction error:', error);

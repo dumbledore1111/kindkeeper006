@@ -30,7 +30,10 @@ export function useSpeechOutput() {
         try {
           const response = await fetch('/api/text-to-speech', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${localStorage.getItem('supabase.auth.token')}`
+            },
             body: JSON.stringify({
               text,
               responseType: options.responseType || 'simple',

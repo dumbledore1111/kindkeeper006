@@ -12,13 +12,21 @@ import {
 } from '@/lib/database'
 import { logger } from '@/lib/logger'
 import { handleApiError } from '@/lib/error-handler'
-import type { Transaction, CategoryType, TransactionType } from '@/types/database'
+import type { Database } from '@/types/database'
+
+type VoiceEntry = {
+  transcript: string;
+  amount?: number;
+  category?: string;
+  description?: string;
+  is_reminder?: boolean;
+  due_date?: string;
+  date: Date;
+}
 
 export async function POST(req: Request) {
-  const supabase = createRouteHandlerClient({ cookies })
-  
   try {
-    const { message, userId, language = 'en' } = await req.json()
+    const { message, userId } = await req.json()
 
     if (!userId) {
       return NextResponse.json({ 
@@ -32,7 +40,7 @@ export async function POST(req: Request) {
 
     // Handle voice entry first
     if (result.voice_entry) {
-      const voiceData = {
+      const voiceData: VoiceEntry = {
         transcript: result.voice_entry.transcript,
         amount: result.voice_entry.amount,
         category: result.voice_entry.category,
@@ -118,7 +126,7 @@ export async function POST(req: Request) {
 }
 
 export async function PATCH(req: Request) {
-  const supabase = createRouteHandlerClient({ cookies })
+  const supabase = createRouteHandlerClient<Database>({ cookies })
 
   try {
     const { reminderId, userId, action = 'complete' } = await req.json()

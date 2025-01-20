@@ -4,9 +4,10 @@ import type { WhisperResult, WhisperError } from '@/types/api'
 interface UseWhisperProps {
   onTranscript?: (text: string) => void;
   authToken?: string;
+  onError?: (error: WhisperError) => void;
 }
 
-export function useWhisper({ onTranscript, authToken }: UseWhisperProps = {}) {
+export function useWhisper({ onTranscript, authToken, onError }: UseWhisperProps = {}) {
   const [isRecording, setIsRecording] = useState(false)
   const [transcript, setTranscript] = useState('')
   const [error, setError] = useState<WhisperError | null>(null)
@@ -19,11 +20,14 @@ export function useWhisper({ onTranscript, authToken }: UseWhisperProps = {}) {
       setError(null)
 
       if (!navigator.mediaDevices || !window.MediaRecorder) {
-        throw {
+        const err = {
           type: 'microphone',
           message: 'Recording is not supported in this browser',
           shouldRetry: false
-        } as WhisperError
+        } as WhisperError;
+        setError(err);
+        onError?.(err);
+        throw err;
       }
 
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -68,11 +72,14 @@ export function useWhisper({ onTranscript, authToken }: UseWhisperProps = {}) {
           })
 
           if (!response.ok) {
-            throw {
+            const err = {
               type: 'network',
               message: `Server error: ${response.status}`,
               shouldRetry: true
-            } as WhisperError
+            } as WhisperError;
+            setError(err);
+            onError?.(err);
+            throw err;
           }
 
           const data: { success: boolean; text: string; confidence?: number } = await response.json()
@@ -90,15 +97,20 @@ export function useWhisper({ onTranscript, authToken }: UseWhisperProps = {}) {
             }
             setError(null)
           } else {
-            throw {
+            const err = {
               type: 'transcription',
               message: data.text || 'Failed to transcribe',
               shouldRetry: true
-            } as WhisperError
+            } as WhisperError;
+            setError(err);
+            onError?.(err);
+            throw err;
           }
         } catch (err) {
           console.error('Transcription error:', err)
-          setError(err as WhisperError)
+          const whisperError = err as WhisperError;
+          setError(whisperError)
+          onError?.(whisperError);
         } finally {
           stream.getTracks().forEach(track => track.stop())
           setIsRecording(false)
@@ -121,14 +133,16 @@ export function useWhisper({ onTranscript, authToken }: UseWhisperProps = {}) {
 
     } catch (err) {
       console.error('Recording error:', err)
-      setError({
+      const whisperError = {
         type: 'microphone',
         message: err instanceof Error ? err.message : 'Failed to start recording',
         shouldRetry: false
-      })
+      } as WhisperError;
+      setError(whisperError)
+      onError?.(whisperError);
       setIsRecording(false)
     }
-  }, [onTranscript, authToken])
+  }, [onTranscript, authToken, onError])
 
   const stopRecording = useCallback(() => {
     if (mediaRecorderRef.current?.state === 'recording') {

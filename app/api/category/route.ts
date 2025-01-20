@@ -5,6 +5,9 @@ import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
 import { cookies } from 'next/headers'
 import { CategoryManager } from '@/lib/category-manager'
 import { supabase } from '@/lib/supabase'
+import { Database } from '@/types/database'
+import { logger } from '@/lib/logger'
+import { handleApiError } from '@/lib/error-handler'
 
 export async function POST(req: Request) {
   const supabase = createRouteHandlerClient({ cookies })
@@ -47,45 +50,36 @@ export async function POST(req: Request) {
 
 // For getting category suggestions
 export async function GET(req: Request) {
+  const supabase = createRouteHandlerClient<Database>({ cookies })
+
   try {
     const { searchParams } = new URL(req.url)
-    const text = searchParams.get('text')
     const userId = searchParams.get('userId')
 
-    if (!text || !userId) {
-      return NextResponse.json({
-        success: false,
-        error: 'Missing required parameters'
+    if (!userId) {
+      return NextResponse.json({ 
+        success: false, 
+        error: 'User ID is required' 
       }, { status: 400 })
     }
 
-    const categoryManager = new CategoryManager()
-    
-    // Get existing categories for this user
-    const { data: existingCategories } = await supabase
-      .from('custom_categories')
+    const { data: categories, error } = await supabase
+      .from('categories')
       .select('*')
-      .eq('user_id', userId);
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
 
-      if (!existingCategories) {
-        return NextResponse.json({
-          success: true,
-          data: [] // Return empty suggestions if no existing categories
-        });
-      }
+    if (error) {
+      logger.error('Category fetch error:', error)
+      throw error
+    }
 
-    const suggestions = await categoryManager.suggestCategorization(text, existingCategories)
-
-    return NextResponse.json({
-      success: true,
-      data: suggestions
+    return NextResponse.json({ 
+      success: true, 
+      categories 
     })
 
   } catch (error) {
-    console.error('Category suggestion error:', error)
-    return NextResponse.json({
-      success: false,
-      error: 'Failed to get category suggestions'
-    }, { status: 500 })
+    return handleApiError(error)
   }
 }

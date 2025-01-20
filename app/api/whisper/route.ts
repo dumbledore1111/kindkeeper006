@@ -4,95 +4,88 @@ import { handleApiError } from '@/lib/error-handler'
 import type { VerboseTranscription, EnhancedTranscriptionSegment } from '@/types/openai'
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
 import { cookies } from 'next/headers'
+import { logger } from '@/lib/logger'
 
 // Keep the response type for better type safety
 interface WhisperResponse {
   text: string;
   language?: string;
   confidence?: number;
+  segments?: EnhancedTranscriptionSegment[];
 }
 
+interface WhisperError {
+  type: 'auth' | 'input' | 'processing' | 'network';
+  message: string;
+  shouldRetry: boolean;
+  details?: unknown;
+}
+
+const AUDIO_CONFIG = {
+  MAX_SIZE_MB: 25,
+  MIN_CONFIDENCE: 0.6,
+  OPTIMAL_TEMPERATURE: 0.3,
+  SUPPORTED_FORMATS: ['audio/webm', 'audio/mp4', 'audio/mpeg', 'audio/wav'] as const
+} as const;
+
 export async function POST(req: Request) {
-  console.log('Whisper API route started')
+  logger.auth('Whisper API route started')
   
   try {
     // Check auth from header first
     const authHeader = req.headers.get('authorization')
-    console.log('Auth header exists:', !!authHeader);
+    logger.auth('Auth header exists: ' + !!authHeader)
     
     if (!authHeader?.startsWith('Bearer ')) {
-      console.error('Missing or invalid auth header format');
+      logger.error('Missing or invalid auth header format')
       return NextResponse.json({ 
         success: false, 
         error: 'Not authenticated',
         shouldRetry: false,
         type: 'auth',
         message: 'Missing or invalid authentication token'
-      }, { status: 401 })
+      } as WhisperError, { status: 401 })
     }
 
     // Extract token and clean it
     const token = authHeader.split(' ')[1].trim()
-    console.log('Received token length:', token.length);
     
     if (!token) {
-      console.error('Empty token provided');
+      logger.error('Empty token provided');
       return NextResponse.json({ 
         success: false, 
         error: 'Invalid token',
         shouldRetry: false,
         type: 'auth',
         message: 'Empty authentication token'
-      }, { status: 401 })
+      } as WhisperError, { status: 401 })
     }
 
-    // Verify token with Supabase
+    // Create Supabase client and verify token
     const supabase = createRouteHandlerClient({ cookies })
-    const { data: { session }, error: authError } = await supabase.auth.getSession()
     
-    console.log('Supabase session exists:', !!session);
-    console.log('Auth error exists:', !!authError);
-    
-    if (authError) {
-      console.error('Supabase auth error:', authError);
+    try {
+      // Verify the token by getting the user
+      const { data: { user }, error: verifyError } = await supabase.auth.getUser(token)
+      
+      logger.auth('Token verification: ' + JSON.stringify({ 
+        userExists: !!user,
+        hasError: !!verifyError 
+      }));
+      
+      if (verifyError || !user) {
+        throw verifyError || new Error('User not found');
+      }
+    } catch (authError) {
+      logger.error('Token verification failed:', authError);
       return NextResponse.json({ 
         success: false, 
-        error: 'Authentication error',
+        error: 'Invalid token',
         shouldRetry: false,
         type: 'auth',
-        message: authError.message
-      }, { status: 401 })
+        message: 'Token verification failed'
+      } as WhisperError, { status: 401 })
     }
-    
-    if (!session?.access_token) {
-      console.error('No active session found');
-      return NextResponse.json({ 
-        success: false, 
-        error: 'No active session',
-        shouldRetry: false,
-        type: 'auth',
-        message: 'Please log in again'
-      }, { status: 401 })
-    }
-
-    // Compare tokens
-    const tokensMatch = token === session.access_token;
-    console.log('Tokens match:', tokensMatch);
-    console.log('Token lengths - Received:', token.length, 'Session:', session.access_token.length);
-    
-    if (!tokensMatch) {
-      console.error('Token mismatch');
-      return NextResponse.json({ 
-        success: false, 
-        error: 'Invalid session',
-        shouldRetry: false,
-        type: 'auth',
-        message: 'Session token mismatch'
-      }, { status: 401 })
-    }
-
-    // Log successful authentication
-    console.log('Authentication successful, proceeding with request');
 
     const formData = await req.formData()
     const audioFile = formData.get('file') as Blob
@@ -102,22 +95,31 @@ export async function POST(req: Request) {
         { 
           success: false, 
           error: 'Please speak again, I couldn\'t hear that properly.',
-          shouldRetry: true 
-        },
+          shouldRetry: true,
+          type: 'input',
+          message: 'No audio file provided'
+        } as WhisperError,
         { status: 400 }
       )
     }
 
     // Validate audio file
-    if (audioFile.size > 25 * 1024 * 1024) { // 25MB limit
+    if (audioFile.size > AUDIO_CONFIG.MAX_SIZE_MB * 1024 * 1024) {
       return NextResponse.json(
         { 
           success: false, 
           error: 'The recording is too long. Please try a shorter message.',
-          shouldRetry: true 
-        },
+          shouldRetry: true,
+          type: 'input',
+          message: 'Audio file too large'
+        } as WhisperError,
         { status: 400 }
       )
+    }
+
+    // Validate audio format
+    if (!AUDIO_CONFIG.SUPPORTED_FORMATS.includes(audioFile.type as typeof AUDIO_CONFIG.SUPPORTED_FORMATS[number])) {
+      logger.error('Unsupported audio format: ' + audioFile.type)
     }
 
     // Convert to File object with optimal format for Indian English
@@ -131,7 +133,7 @@ export async function POST(req: Request) {
       model: 'whisper-1',
       language: 'en',
       response_format: 'verbose_json',
-      temperature: 0.3, // Lower temperature for more accurate transcription
+      temperature: AUDIO_CONFIG.OPTIMAL_TEMPERATURE,
       prompt: `This is Indian English speech about financial transactions, expenses, and daily activities. Common words: rupees, maid, pension, bill, payment.`
     }) as unknown as VerboseTranscription;
 
@@ -139,20 +141,23 @@ export async function POST(req: Request) {
     const result: WhisperResponse = {
       text: transcription.text,
       language: transcription.language,
-      confidence: transcription.segments?.[0]?.confidence
+      confidence: transcription.segments?.[0]?.confidence,
+      segments: transcription.segments
     }
 
     // Enhanced cleaning for Indian English
     const cleanedText = cleanIndianEnglishText(result.text)
 
     // Only return if confidence is good enough
-    if (result.confidence && result.confidence < 0.6) {
+    if (result.confidence && result.confidence < AUDIO_CONFIG.MIN_CONFIDENCE) {
       return NextResponse.json(
         { 
           success: false, 
           error: 'I didn\'t catch that clearly. Could you please speak a bit more slowly?',
-          shouldRetry: true
-        },
+          shouldRetry: true,
+          type: 'processing',
+          message: 'Low confidence in transcription'
+        } as WhisperError,
         { status: 400 }
       )
     }
@@ -161,30 +166,40 @@ export async function POST(req: Request) {
       success: true,
       text: cleanedText,
       original: result.text,
-      confidence: result.confidence
+      confidence: result.confidence,
+      segments: result.segments?.map(s => ({
+        text: s.text,
+        confidence: s.confidence
+      }))
     })
 
-  } catch (error: any) {
-    console.error('Whisper API error:', error)
+  } catch (error: unknown) {
+    logger.error('Whisper API error:', error)
     
-    if (error.message?.includes('audiodecode')) {
+    const err = error as Error
+    
+    if (err.message?.includes('audiodecode')) {
       return NextResponse.json(
         { 
           success: false, 
           error: 'I had trouble understanding that. Could you speak a bit more clearly?',
-          shouldRetry: true
-        },
+          shouldRetry: true,
+          type: 'processing',
+          message: 'Audio decode error'
+        } as WhisperError,
         { status: 400 }
       )
     }
 
-    if (error.message?.includes('network') || error.code === 'UND_ERR_CONNECT_TIMEOUT') {
+    if (err.message?.includes('network') || ('code' in err && err.code === 'UND_ERR_CONNECT_TIMEOUT')) {
       return NextResponse.json(
         { 
           success: false, 
           error: 'There seems to be a connection issue. Please try again.',
-          shouldRetry: true
-        },
+          shouldRetry: true,
+          type: 'network',
+          message: 'Network error'
+        } as WhisperError,
         { status: 503 }
       )
     }
@@ -193,7 +208,7 @@ export async function POST(req: Request) {
   }
 }
 
-// Enhanced cleaning function
+// Enhanced cleaning function with better pattern matching
 function cleanIndianEnglishText(text: string): string {
   return text
     .trim()
@@ -212,5 +227,7 @@ function cleanIndianEnglishText(text: string): string {
     .replace(/(\d+)\s+thousand/gi, '$1000')
     .replace(/(\d+)\s+hundred/gi, '$100')
     .replace(/(\d+)\s+rupees?/gi, '₹$1')
+    // Clean up multiple spaces and trim
+    .replace(/\s+/g, ' ')
     .trim()
 } 

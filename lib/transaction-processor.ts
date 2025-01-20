@@ -50,7 +50,7 @@ interface ProcessedInput {
     due_date?: Date
   }
   needs_clarification?: {
-    type: 'amount' | 'date' | 'name' | 'purpose'
+    type: 'amount' | 'date' | 'name' | 'purpose' | 'payment_method'
     context: string
   }
 }
@@ -365,7 +365,11 @@ export function processInput(text: string): ProcessedInput {
         is_recurring: detectRecurring(lowerText),
         category: categories[0]
       },
-      service_provider: serviceProvider
+      service_provider: serviceProvider,
+      needs_clarification: !paymentMethod ? {
+        type: 'payment_method',
+        context: 'How did you pay for this?'
+      } : undefined
     }
   }
 

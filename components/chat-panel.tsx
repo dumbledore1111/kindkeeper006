@@ -1,25 +1,18 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
-import { Sheet, SheetContent } from "@/components/ui/sheet"
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { ArrowLeft, Camera, Send, Mic, Check, AlertTriangle, Loader2, X } from 'lucide-react'
-import { PhotoCapture } from './photo-capture'
+import { ArrowLeft, Camera, Send, Mic, Check, AlertTriangle } from 'lucide-react'
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import type { AppSettings } from './settings-popup'
 import { useWhisper } from '@/hooks/useWhisper'
 import { useSpeechOutput } from '@/hooks/useSpeechOutput'
-import { isSimpleTransaction } from '@/lib/transaction-processor'
-import { processMessage } from '@/lib/api'
-import { useAuth } from '@/hooks/useAuth'
 import type { 
-  WhisperResponse, 
-  AssistantResponse,
-  ElevenLabsResponse
+  WhisperError
 } from '@/types/api'
-import type { Context, ContextLog, DatabaseOperationStatus } from '@/types/database'
-import { useSpeechSynthesis } from '@/hooks/useSpeechSynthesis'
+import type { ContextLog } from '@/types/database'
+import { useAuth } from '@/hooks/useAuth'
 
 interface Message {
   type: 'text' | 'image'
@@ -33,6 +26,12 @@ interface ChatPanelProps {
   open: boolean
   onClose: () => void
   settings?: AppSettings
+}
+
+interface ApiError {
+  type: string;
+  message: string;
+  details?: unknown;
 }
 
 const defaultSettings: AppSettings = {
@@ -86,11 +85,9 @@ export function ChatPanel({
   settings = defaultSettings 
 }: ChatPanelProps) {
   const { session, refreshSession } = useAuth()
-  const [useElevenLabs, setUseElevenLabs] = useState(false)
-  const [contextHistory, setContextHistory] = useState<ContextLog[]>([])
   const [messages, setMessages] = useState<Message[]>([])
   const [retryCount, setRetryCount] = useState(0)
-  const [failedOperation, setFailedOperation] = useState<any>(null)
+  const [failedOperation, setFailedOperation] = useState<ApiError | null>(null)
   const [loadingStates, setLoadingStates] = useState({
     processing: false,
     speaking: false,
@@ -101,22 +98,34 @@ export function ChatPanel({
   const [inputMessage, setInputMessage] = useState('')
   const [showPhotoOptions, setShowPhotoOptions] = useState(false)
   const chatContainerRef = useRef<HTMLDivElement>(null)
-  const { speak, stop, isSpeaking } = useSpeechOutput()
-  const [dbOperations, setDbOperations] = useState<DatabaseOperationStatus[]>([])
+  const { speak } = useSpeechOutput()
+  const [contextHistory, setContextHistory] = useState<ContextLog[]>([])
 
-  // Debug session state
-  useEffect(() => {
-    console.log('Session state:', {
-      exists: !!session,
-      token: session?.access_token?.slice(0, 10) + '...',
-      user: session?.user?.id
-    });
-  }, [session]);
+  const handleResponse = useCallback(async (text: string) => {
+    setMessages(prev => [...prev, {
+      type: 'text',
+      content: text,
+      isUser: false,
+      status: 'sent',
+      needsConfirmation: false
+    }]);
 
-  // Ensure we have a valid session before initializing Whisper
+    if (settings.voiceType !== 'none') {
+      await speak(text);
+    }
+  }, [settings.voiceType, speak]);
+
+  const handle401Error = useCallback(async () => {
+    console.log('Attempting to refresh session...');
+    await refreshSession();
+    if (!session?.access_token) {
+      handleResponse("Your session has expired. Please log in again.");
+      onClose();
+    }
+  }, [refreshSession, session?.access_token, handleResponse, onClose]);
+
   const { 
     isRecording, 
-    transcript, 
     error: recordingError, 
     startRecording, 
     stopRecording 
@@ -127,25 +136,31 @@ export function ChatPanel({
         handleSend(text);
       }
     },
-    authToken: session?.access_token || ''
+    authToken: session?.access_token || '',
+    onError: async (error: WhisperError) => {
+      console.error('Whisper error:', error);
+      if (error.type === 'network' && error.message.includes('401')) {
+        await refreshSession();
+        if (!session?.access_token) {
+          handleResponse("Your session has expired. Please log in again.");
+          onClose();
+        }
+      }
+    },
   });
 
-  // Handle 401 errors by refreshing session
-  const handle401Error = async () => {
-    console.log('Attempting to refresh session...');
-    await refreshSession();
-    if (!session?.access_token) {
-      handleResponse("Your session has expired. Please log in again.");
-      onClose();
+  // Auto-scroll when new messages appear
+  useEffect(() => {
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
     }
-  };
+  }, [messages]);
 
-  // Handle recording errors with better error handling
+  // Handle recording errors
   useEffect(() => {
     if (recordingError) {
       console.error('Recording error:', recordingError);
       
-      // Handle different error types
       switch(recordingError.type) {
         case 'network':
           if (recordingError.message.includes('401')) {
@@ -161,21 +176,34 @@ export function ChatPanel({
           handleResponse("There was an error with the recording. Please try again.");
       }
 
-      // Stop recording if it's still going
       if (isRecording) {
         stopRecording();
       }
     }
-  }, [recordingError, isRecording, stopRecording, session, onClose]);
+  }, [recordingError, isRecording, stopRecording, handle401Error, handleResponse]);
 
-  // Auto-scroll when new messages appear
-  useEffect(() => {
-    if (chatContainerRef.current) {
-      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+  const handlePhotoCapture = useCallback((photoUrl: string) => {
+    setMessages(prev => [...prev, { 
+      type: 'image', 
+      content: photoUrl, 
+      isUser: true, 
+      status: 'sent', 
+      needsConfirmation: false 
+    }]);
+    setShowPhotoOptions(false);
+  }, []);
+
+  const handleVoiceInput = useCallback(async () => {
+    if (isRecording) {
+      stopRecording();
+      setLoadingStates(prev => ({ ...prev, recording: false }));
+    } else {
+      setLoadingStates(prev => ({ ...prev, recording: true }));
+      await startRecording();
     }
-  }, [messages]);
+  }, [isRecording, startRecording, stopRecording]);
 
-  const handleSend = async (input: string) => {
+  const handleSend = useCallback(async (input: string) => {
     if (!session?.access_token) {
       console.error('No session found');
       handleResponse("Please log in to continue.");
@@ -185,7 +213,6 @@ export function ChatPanel({
     if (input.trim() && !isProcessing) {
       setIsProcessing(true);
       try {
-        // Show user message first
         setMessages(prev => [...prev, { 
           type: 'text', 
           content: input,
@@ -194,135 +221,85 @@ export function ChatPanel({
           needsConfirmation: false
         }]);
 
-        // Send to context API with proper auth
         const response = await fetch('/api/context', {
           method: 'POST',
           headers: { 
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${session.access_token}`
           },
-          body: JSON.stringify({ 
-            userId: session.user.id,
-            message: input,
-            context: contextHistory[contextHistory.length - 1]
-          })
-        });
-
-        if (!response.ok) {
-          throw new Error(`API error: ${response.status}`);
-        }
-
-        const data = await response.json();
-
-        if (!data.success) {
-          throw new Error(data.error || 'Failed to process message');
-        }
-
-        // Update message status
-        setMessages(prev => prev.map((msg, i) => 
-          i === prev.length - 1 ? { ...msg, status: 'sent' } : msg
-        ));
-
-        // Update context
-        if (data.context) {
-          setContextHistory(prev => [...prev, data.context]);
-        }
-
-        // Handle response based on intent
-        if (data.needsMoreInfo) {
-          speak(data.clarification?.context || data.response);
-        } else {
-          handleResponse(data.response);
-        }
-
-      } catch (error) {
-        console.error('Failed to process message:', error);
+            body: JSON.stringify({ 
+              userId: session.user.id,
+              message: input,
+              context: contextHistory[contextHistory.length - 1]
+            })
+          });
         
-        // Update message status to error
-        setMessages(prev => prev.map((msg, i) => 
-          i === prev.length - 1 ? { ...msg, status: 'error' } : msg
-        ));
-
-        handleResponse("I'm having trouble processing your request. Please try again.");
-      } finally {
-        setIsProcessing(false);
-        setInputMessage('');
-      }
-    }
-  };
-
-  const handlePhotoCapture = (photoUrl: string) => {
-    setMessages(prev => [...prev, { type: 'image', content: photoUrl, isUser: true, status: 'sent', needsConfirmation: false }])
-    setShowPhotoOptions(false)
-  }
-
-  const handleVoiceInput = async () => {
-    // Debug session state before voice input
-    console.log('Voice input session state:', {
-      token: session?.access_token?.slice(0, 10),
-      exists: !!session
-    });
-
-    if (!session?.access_token) {
-      try {
-        await refreshSession();
-        if (!session?.access_token) {
-          handleResponse("Please log in to use voice features.");
+        if (response.status === 401) {
+          await handle401Error();
           return;
         }
-      } catch (error) {
-        handleResponse("Please log in to use voice features.");
-        return;
-      }
-    }
-
-    if (isRecording) {
-      stopRecording();
-    } else {
-      try {
-        // Clear any previous errors
-        setMessages(prev => prev.filter(m => 
-          !(m.isUser === false && typeof m.content === 'string' && m.content.includes("error"))
-        ));
-        
-        // Request microphone permission
-        const stream = await navigator.mediaDevices.getUserMedia({ 
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            channelCount: 1
+          
+          if (!response.ok) {
+            throw new Error(`API error: ${response.status}`);
           }
-        });
-        
-        // Start recording if we got microphone access
-        startRecording();
-        
-        // Cleanup function
-        return () => {
-          stream.getTracks().forEach(track => track.stop());
-        };
-      } catch (err) {
-        console.error('Microphone error:', err);
-        handleResponse("I need permission to use the microphone. Please check your browser settings and try again.");
-      }
-    }
-  };
+          
+          const data = await response.json();
 
-  const handleResponse = async (text: string) => {
-    try {
-      const responseType = determineResponseType(text);
-      
-      if (settings?.voiceType !== 'none') {
-        await speak(text, {
-          useElevenLabs: true,
-          responseType,
-          emotion: responseType === 'error' ? 'concerned' : 'friendly'
-        });
+          if (!data.success) {
+            throw new Error(data.error || 'Failed to process message');
+          }
+
+        setMessages(prev => 
+          prev.map(m => 
+            m.content === input && m.isUser 
+              ? { ...m, status: 'sent' } 
+              : m
+          )
+        );
+
+        if (data.response) {
+            handleResponse(data.response);
+        }
+
+            if (data.context) {
+              setContextHistory(prev => [...prev, data.context]);
+        }
+
+      } catch (error) {
+        console.error('Error processing message:', error);
+        setMessages(prev => 
+          prev.map(m => 
+            m.content === input && m.isUser 
+              ? { ...m, status: 'error' } 
+              : m
+          )
+        );
+        handleResponse("I'm having trouble processing your message. Please try again.");
+      } finally {
+        setIsProcessing(false);
       }
-    } catch (error) {
-      console.error('Voice feedback error:', error);
     }
-  };
+  }, [session, isProcessing, handleResponse, contextHistory, handle401Error]);
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSend(inputMessage);
+    }
+  }, [handleSend, inputMessage]);
+
+  // Add welcome message only once when panel opens
+  useEffect(() => {
+    if (open) {
+      setMessages([{ 
+        type: 'text', 
+        content: "Hello, how can I help you?", 
+        isUser: false, 
+        status: 'sent', 
+        needsConfirmation: false 
+      }]);
+    }
+  }, [open]);
 
   // Helper functions for response classification
   function determineResponseType(text: string): 'simple' | 'complex' | 'query' | 'error' {
@@ -460,26 +437,6 @@ export function ChatPanel({
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSend(inputMessage);
-    }
-  };
-
-  // Add welcome message only once when panel opens
-  useEffect(() => {
-    if (open) {
-      setMessages([{ 
-        type: 'text', 
-        content: "Hello, how can I help you?", 
-        isUser: false, 
-        status: 'sent', 
-        needsConfirmation: false 
-      }])
-    }
-  }, [open])
-
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="p-0 border-none bg-transparent">
@@ -531,45 +488,35 @@ export function ChatPanel({
 
           {/* Input Area */}
             <div className="absolute bottom-6 left-6 right-6 flex flex-col gap-4">
-              {/* Main Record Button - Centered and Large */}
               <Button
                 onClick={handleVoiceInput}
-                className={`
-                  w-24 h-24 rounded-full mx-auto
-                  ${isRecording 
+                className={`h-24 w-24 mx-auto rounded-full ${
+                  isRecording 
                     ? 'bg-red-500 hover:bg-red-600' 
                     : 'bg-[#ff6b00] hover:bg-[#ff8533]'
-                  }
-                  flex items-center justify-center
-                  transition-all duration-300
-                  shadow-lg hover:shadow-xl
-                `}
+                } text-white shadow-lg transition-all duration-300`}
               >
-                <Mic className="h-8 w-8 text-white" />
+                {isRecording ? (
+                  <div className="w-3 h-3 rounded-full bg-white animate-pulse" />
+                ) : (
+                  <Mic className="w-10 h-10" />
+                )}
               </Button>
 
-              {/* Text Input and Send - More Visible */}
-              <div className="flex gap-2 items-center">
+              <div className="flex items-center gap-2 bg-[#8B4513] rounded-full p-2">
                 <Input
                   value={inputMessage}
                   onChange={(e) => setInputMessage(e.target.value)}
-                  placeholder="Type a message..."
-                  className="flex-1 h-12 rounded-full 
-                    bg-gray-50 border-2 border-gray-300 
-                    text-lg px-6 
-                    placeholder:text-gray-600 
-                    text-gray-800
-                    focus:border-[#ff6b00] focus:ring-2 focus:ring-[#ff6b00]/20
-                    shadow-md hover:shadow-lg
-                    transition-all duration-300"
                   onKeyDown={handleKeyDown}
+                  placeholder="Type here....."
+                  className="flex-1 bg-transparent border-none text-white placeholder-gray-400 focus:ring-0"
                 />
                 <Button
                   onClick={() => handleSend(inputMessage)}
-                  className="h-12 w-12 rounded-full bg-[#ff6b00] hover:bg-[#ff8533]
-                    flex items-center justify-center shadow-md"
+                  className="bg-[#ff6b00] hover:bg-[#ff8533] text-white rounded-full p-3 h-auto w-auto"
+                  disabled={isProcessing}
                 >
-                  <Send className="h-5 w-5 text-white" />
+                  <Send className="w-5 h-5" />
                 </Button>
               </div>
             </div>

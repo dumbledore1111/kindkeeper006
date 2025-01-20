@@ -15,7 +15,7 @@ interface ProcessedInput {
   userResponse: string
   dbOperations: DbOperation[]
   needsMoreInfo?: {
-    type: 'amount' | 'provider_name' | 'date' | 'frequency'
+    type: 'amount' | 'provider_name' | 'date' | 'frequency' | 'payment_method'
     context: string
   }
 }
@@ -229,6 +229,18 @@ function processInputInternal(input: string): ProcessedInput {
       needsMoreInfo: {
         type: 'provider_name',
         context: `Need ${serviceProvider.service_type}'s name`
+      }
+    }
+  }
+
+  // Handle missing payment method for transactions
+  if (amount && !paymentMethod) {
+    return {
+      userResponse: "How did you pay for this?",
+      dbOperations: [],
+      needsMoreInfo: {
+        type: 'payment_method',
+        context: 'Please specify how you paid (cash, card, UPI, etc.)'
       }
     }
   }

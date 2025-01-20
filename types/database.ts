@@ -13,20 +13,26 @@ export type CategoryType =
   | 'miscellaneous';
 
 export type ServiceProviderType = 
-  | 'maid'
-  | 'driver'
-  | 'milkman'
-  | 'watchman'
-  | 'gardener'
-  | 'maintenance'
+  | 'maid' 
+  | 'driver' 
+  | 'nurse' 
+  | 'gardener' 
+  | 'watchman' 
+  | 'milkman' 
   | 'physiotherapist'
-  | 'nurse'
+  | 'maintenance'
+  | 'cook'
+  | 'cleaner'
+  | 'tutor'
   | 'caregiver'
+  | 'other'
 
 export type UnitType = 
   | 'per_day'
   | 'per_month'
   | 'per_litre'
+
+export type PaymentMethod = 'UPI' | 'CASH' | 'CARD' | 'BANK_TRANSFER' | 'CHEQUE'
 
 export interface Database {
   public: {
@@ -211,6 +217,11 @@ export interface Context {
     lowest: number;
   };
   amount?: number;
+  history: {
+    isUser: boolean;
+    content: string;
+    timestamp: string;
+  }[];
 }
 
 export interface FormattedResponse {

@@ -35,43 +35,87 @@ import { createClient } from '@supabase/supabase-js';
 import type { Database } from '@/types/database';
 import { logger } from './logger';
 import { openai, SYSTEM_PROMPTS } from './openai';
+import { IntentDetector, IntentDetectionResponse, IncompleteTransaction, IncompleteAttendance } from './intent-detector'
+import { ReminderProcessor } from './processors/reminder-processor'
+import { AttendanceProcessor } from './processors/attendance-processor'
+import type { PaymentMethod, ServiceProviderType } from '@/types/database'
+import { supabase } from '@/lib/supabase'
+import { TransactionProcessor } from './processors/transaction-processor';
+
+interface HistoricalData {
+  amounts: number[];
+  dates: Date[];
+  categories: string[];
+  descriptions: string[];
+}
+
+interface TimeRange {
+  start: Date;
+  end: Date;
+}
+
+interface WorkDayAnalysis {
+  mostCommon: string;
+  regularity: number;
+}
+
+interface PaymentAnalysis {
+  amounts: number[];
+  dates: Date[];
+  relatedTransactions: string[];
+}
 
 type SystemPromptType = 'transaction' | 'attendance' | 'reminder' | 'query' | 'unknown';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-
-export const supabase = createClient<Database>(supabaseUrl, supabaseKey);
+function formatError(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return String(error);
+}
 
 export class ContextEngine {
   private userId: string;
   private currentIntent: Intent;
   private context: Context;
   private queryProcessor: QueryProcessor;
+  private intentDetector: IntentDetector;
+  private reminderProcessor: ReminderProcessor;
+  private attendanceProcessor: AttendanceProcessor;
+  private transactionProcessor: TransactionProcessor;
 
   constructor(userId: string) {
     this.userId = userId;
-    this.queryProcessor = new QueryProcessor(userId);
     this.currentIntent = {
       type: 'unknown',
       confidence: 0,
       relatedEvents: []
     };
     this.context = this.initializeContext(userId);
+    this.queryProcessor = new QueryProcessor(userId);
+    this.intentDetector = new IntentDetector(userId);
+    this.reminderProcessor = new ReminderProcessor(userId);
+    this.attendanceProcessor = new AttendanceProcessor(userId);
+    this.transactionProcessor = new TransactionProcessor(userId);
   }
 
   private initializeContext(userId: string): Context {
+    try {
     return {
       userId,
       currentIntent: this.currentIntent,
+        history: [],
       recentEvents: [],
       relatedContexts: [],
       relatedEvents: [],
-      history: [],
       timeContext: {
         referenceDate: new Date()
       }
     };
+    } catch (error) {
+      logger.error('Failed to initialize context', formatError(error));
+      throw error;
+    }
   }
 
   // Service Provider Pattern Detection
@@ -401,47 +445,102 @@ export class ContextEngine {
   }
 
   // Main processInput method
-  async processInput(message: string, context?: Context): Promise<ProcessingResult> {
+  async processInput(input: string, context?: Context): Promise<ProcessingResult> {
     try {
-      const intentAnalysis = await this.detectIntent(message, context);
+      const aiResponse = await this.intentDetector.detectIntent(input);
       
-      const processedInput = await processUserInput(message, this.userId);
+      if (!aiResponse) {
+        return {
+          success: false,
+          response: "I couldn't understand that. Could you please rephrase?",
+          context: context || this.createDefaultContext(),
+          intent: 'unknown'
+        };
+      }
 
-      const result = await this.routeToProcessor(
-        intentAnalysis,
-        {
-          ...processedInput,
-          entities: intentAnalysis.category ? { category: intentAnalysis.category } : undefined
-        }
-      );
-
-      return intentAnalysis.confidence 
-        ? {
-            ...result,
-            confidence: intentAnalysis.confidence
-          }
-        : result;
-
+      // Handle each intent type
+      switch (aiResponse.intent.primary) {
+        case 'transaction':
+          return await this.handleTransactionIntent(aiResponse, context);
+        
+        case 'attendance':
+          return await this.handleAttendanceIntent(aiResponse, input, context);
+        
+        case 'query':
+          return await this.handleQueryIntent(aiResponse, input, context);
+        
+        case 'reminder':
+          return await this.handleReminderIntent(aiResponse, input, context);
+        
+        default:
+          return {
+            success: false,
+            response: "I'm not sure how to handle that request.",
+            context: context || this.createDefaultContext(),
+            intent: 'unknown'
+          };
+      }
     } catch (error) {
-      console.error('Context processing error:', error);
-      throw error;
+      console.error('Error processing input:', error);
+      return {
+        success: false,
+        response: "Sorry, something went wrong. Please try again.",
+        context: context || this.createDefaultContext(),
+        intent: 'unknown'
+      };
     }
   }
 
-  private async storeRelationships(relationships: RelationshipMap[]): Promise<void> {
-    for (const rel of relationships) {
-      await supabase
-        .from('event_relationships')
-        .insert(
-          rel.related.map(relatedId => ({
-            primary_event_id: rel.primary,
-            related_event_id: relatedId,
-            relationship_type: rel.type,
-            strength: rel.strength,
-            created_at: new Date()
-          }))
-        );
+  private createDefaultContext(): Context {
+    return {
+      userId: this.userId,
+      currentIntent: {
+        type: 'unknown',
+        confidence: 0,
+        relatedEvents: []
+      },
+      history: [],
+      recentEvents: [],
+      relatedContexts: [],
+      relatedEvents: [],
+      timeContext: {
+        referenceDate: new Date()
+      }
+    };
+  }
+
+  private getMissingTransactionFields(updates: TransactionResponse): string[] {
+    const missingFields: string[] = [];
+    if (!updates.amount) missingFields.push('amount');
+    if (!updates.description) missingFields.push('description');
+    return missingFields;
+  }
+
+  private async processTransaction(aiResponse: TransactionResponse, context?: Context): Promise<ProcessingResult> {
+    const missingFields = this.getMissingTransactionFields(aiResponse);
+    if (missingFields.length > 0) {
+      const updatedContext = context || this.createDefaultContext();
+      return {
+        success: false,
+        response: `Could you please specify the ${missingFields.join(', ')}?`,
+        context: {
+          ...updatedContext,
+          currentTransaction: aiResponse
+        },
+        intent: 'transaction'
+      };
     }
+
+    // Ensure payment_method is a valid PaymentMethod type
+    const payment_method = (aiResponse.payment_method || 'CASH') as PaymentMethod;
+    
+    return await this.transactionProcessor.processTransaction(
+      {
+        ...aiResponse,
+        payment_method
+      },
+      context || this.createDefaultContext()
+    );
   }
 
   // Analytics Features
@@ -1081,7 +1180,7 @@ export class ContextEngine {
           messages: [
             {
               role: "system" as const,
-              content: SYSTEM_PROMPTS.default
+              content: `${SYSTEM_PROMPTS.default}\nRespond ONLY with a JSON object.`
             },
             {
               role: "user" as const,
@@ -1091,8 +1190,7 @@ export class ContextEngine {
               role: "assistant" as const,
               content: `Previous context: ${JSON.stringify(context)}`
             }] : [])
-          ],
-          response_format: { type: "json_object" }
+          ]
         });
 
         const content = completion.choices[0]?.message?.content;
@@ -1100,6 +1198,7 @@ export class ContextEngine {
           throw new Error('No response content from OpenAI');
         }
 
+        try {
         const result = JSON.parse(content);
         return {
           type: result.intent as Intent['type'],
@@ -1107,6 +1206,10 @@ export class ContextEngine {
           relatedEvents: [],
           category: result.entities?.category
         };
+        } catch (parseError) {
+          logger.error('Failed to parse OpenAI response:', parseError);
+          throw new Error('Invalid response format from OpenAI');
+        }
       } catch (aiError) {
         logger.error('OpenAI intent detection failed, falling back to pattern matching:', aiError);
         
@@ -1273,9 +1376,9 @@ export class ContextEngine {
         case 'transaction':
           // Ensure transaction type is correct
           const transactionInput: TransactionResponse = {
-            type: processedInput.entities?.type as 'expense' | 'income' || 'expense',
+            type: (processedInput.entities?.type as 'expense' | 'income') || 'expense',
             amount: processedInput.entities?.amount || 0,
-            description: processedInput.response,
+            description: processedInput.response || 'No description provided',
             category: processedInput.entities?.category,
             date: processedInput.entities?.date || new Date().toISOString()
           };
@@ -1285,7 +1388,7 @@ export class ContextEngine {
         case 'reminder':
           // Properly type reminder input
           const reminderInput: ReminderResponse = {
-            title: processedInput.response,
+            title: processedInput.response || 'Untitled reminder',
             due_date: processedInput.entities?.date || new Date().toISOString(),
             type: processedInput.entities?.type as "bill_payment" | "medicine" | "appointment" | "service_payment" | "other" | undefined,
             amount: processedInput.entities?.amount,
@@ -1335,15 +1438,25 @@ export class ContextEngine {
     currentContext: Context | undefined,
     result: ProcessingResult
   ): Promise<Context> {
+    // Get the response message from available fields, defaulting to a string if none are available
+    const responseMessage = 
+      (typeof result.response === 'string' ? result.response :
+      typeof result.message === 'string' ? result.message :
+      'No response available') as string;
+
     const updatedContext = {
       ...this.context,
       ...currentContext,
       lastIntent: result.intent,
       history: [
-        ...(currentContext?.history || []),
+        ...(currentContext?.history || []).map(entry => ({
+          isUser: entry.isUser,
+          content: typeof entry.content === 'string' ? entry.content : 'No content available',
+          timestamp: entry.timestamp
+        })),
         {
           isUser: false,
-          content: result.response,
+          content: responseMessage,
           timestamp: new Date().toISOString()
         }
       ]
@@ -1352,7 +1465,7 @@ export class ContextEngine {
     if (result.dbOperations?.length) {
       const relationships = await this.handleRelationships(
         result.dbOperations[0].data,
-        result.intent
+        result.intent || 'unknown'
       );
       await this.storeRelationships(relationships);
     }
@@ -1851,41 +1964,6 @@ export class ContextEngine {
     }
   }
 
-  private async processTransaction(transaction: TransactionResponse): Promise<ProcessingResult> {
-    try {
-      if (!transaction.amount) {
-        throw new Error('Transaction amount is required');
-      }
-
-      // Process transaction data
-      const dbOperation = {
-        table: 'transactions',
-        operation: 'insert',
-        data: {
-          ...transaction,
-          user_id: this.userId,
-          created_at: new Date()
-        }
-      };
-
-      // Execute database operation
-        await supabase
-        .from('transactions')
-        .insert(dbOperation.data);
-
-      return {
-        success: true,
-        response: `Transaction recorded: ${transaction.type} of ₹${transaction.amount} for ${transaction.description || 'unspecified purpose'}`,
-        context: this.context,
-        intent: 'transaction',
-        dbOperations: [dbOperation]
-      };
-    } catch (error) {
-      logger.error('Transaction processing error:', error);
-      throw error;
-    }
-  }
-
   private async processReminder(reminder: ReminderResponse): Promise<ProcessingResult> {
     try {
       // Process reminder data
@@ -1963,7 +2041,7 @@ export class ContextEngine {
           context: {
             userId: this.userId,
             currentIntent: {
-              type: 'query',
+              type: 'query' as const,
               confidence: 0.8,
               relatedEvents: []
             },
@@ -2107,5 +2185,194 @@ export class ContextEngine {
       `Income: ₹${data.balance.income}\n` +
       `Expenses: ₹${data.balance.expenses}\n` +
       `Balance: ₹${data.balance.balance}`;
+  }
+
+  private async storeRelationships(relationships: RelationshipMap[]): Promise<void> {
+    try {
+      for (const rel of relationships) {
+        await supabase
+          .from('event_relationships')
+          .insert(
+            rel.related.map(relatedId => ({
+              primary_event_id: rel.primary,
+              related_event_id: relatedId,
+              relationship_type: rel.type,
+              strength: rel.strength,
+              created_at: new Date()
+            }))
+          )
+      }
+    } catch (error) {
+      console.error('Error storing relationships:', error)
+      // Don't throw, just log the error as this is not critical
+    }
+  }
+
+  private getMissingAttendanceFields(attendance: Partial<IncompleteAttendance>): string[] {
+    const missingFields: string[] = [];
+    
+    // Check provider type and name
+    if (!attendance.provider_type) {
+      missingFields.push('service_provider.type');
+    }
+    if (!attendance.name) {
+      missingFields.push('provider_name');
+    }
+    
+    // Check wage info
+    if (!attendance.wage_info) {
+      missingFields.push('wage_info');
+    } else {
+      if (!attendance.wage_info.amount) {
+        missingFields.push('wage_amount');
+      }
+      if (!attendance.wage_info.frequency) {
+        missingFields.push('wage_frequency');
+      }
+      if (!attendance.wage_info.schedule || 
+          (!attendance.wage_info.schedule.visits_per_week && 
+           !attendance.wage_info.schedule.hours_per_visit)) {
+        missingFields.push('schedule');
+      }
+    }
+    
+    // Always return at least one field if nothing is found
+    if (missingFields.length === 0) {
+      missingFields.push('provider_name');
+    }
+    
+    return missingFields;
+  }
+
+  private determineQueryType(input: string): QueryResponse['type'] {
+    if (input.toLowerCase().includes('spend') || input.toLowerCase().includes('spent')) {
+      return 'expense_query';
+    }
+    if (input.toLowerCase().includes('earn') || input.toLowerCase().includes('income')) {
+      return 'income_query';
+    }
+    if (input.toLowerCase().includes('balance')) {
+      return 'balance_query';
+    }
+    if (input.toLowerCase().includes('transaction')) {
+      return 'transaction_query';
+    }
+    return 'complex';
+  }
+
+  private determineReminderType(aiResponse: IntentDetectionResponse, input: string): ReminderResponse['type'] {
+    if (aiResponse.context.service_provider.type) {
+      return 'service_payment';
+    }
+    if (aiResponse.context.financial.category === 'medicine') {
+      return 'medicine';
+    }
+    if (aiResponse.context.financial.category === 'bills' || 
+        aiResponse.context.financial.amount) {
+      return 'bill_payment';
+    }
+    if (input.toLowerCase().includes('appointment') || 
+        input.toLowerCase().includes('meet') || 
+        input.toLowerCase().includes('visit')) {
+      return 'appointment';
+    }
+    return 'other';
+  }
+
+  private async handleTransactionIntent(aiResponse: IntentDetectionResponse, context?: Context): Promise<ProcessingResult> {
+    const amount = aiResponse.context.financial.amount;
+    const category = aiResponse.context.financial.category;
+    
+    if (!amount) {
+      return {
+        success: false,
+        response: "Could you please specify the amount?",
+        context: context || this.createDefaultContext(),
+        intent: 'transaction'
+      };
+    }
+
+    const transactionResponse: TransactionResponse = {
+      type: 'expense',
+      amount,
+      description: category ? `Payment for ${category}` : 'Payment',
+      category: category || 'miscellaneous',
+      payment_method: (aiResponse.context.financial.payment_method || 'CASH') as PaymentMethod,
+      date: aiResponse.context.temporal.reference_date || new Date().toISOString(),
+      service_provider: aiResponse.context.service_provider.type ? {
+        type: aiResponse.context.service_provider.type as 'maid' | 'driver' | 'nurse' | 'gardener' | 'watchman' | 'milkman' | 'physiotherapist',
+        name: aiResponse.context.service_provider.name || ''
+      } : undefined
+    };
+    
+    return await this.transactionProcessor.processTransaction(transactionResponse, context);
+  }
+
+  private async handleAttendanceIntent(aiResponse: IntentDetectionResponse, input: string, context?: Context): Promise<ProcessingResult> {
+    const attendanceResponse: AttendanceResponse = {
+      provider_type: aiResponse.context.service_provider.type as 'maid' | 'driver' | 'nurse' | 'gardener' | 'watchman' | 'milkman' | 'physiotherapist',
+      name: aiResponse.context.service_provider.name || '',
+      status: input.toLowerCase().includes('absent') || input.toLowerCase().includes('leave') ? 'absent' : 'present',
+      date: aiResponse.context.temporal.reference_date || new Date().toISOString()
+    };
+
+    return await this.attendanceProcessor.process(attendanceResponse, context);
+  }
+
+  private async handleQueryIntent(aiResponse: IntentDetectionResponse, input: string, context?: Context): Promise<ProcessingResult> {
+    // For simple queries, just pass the input string
+    if (this.isSimpleQuery(input)) {
+      return await this.queryProcessor.process(input, context);
+    }
+
+    // For complex queries, construct a QueryResponse
+    const queryType = this.determineQueryType(input);
+    const queryResponse: QueryResponse = {
+      type: queryType,
+      time_period: aiResponse.context.temporal.reference_date ? 'custom' : 'this month',
+      provider: aiResponse.context.service_provider.type ? {
+        type: aiResponse.context.service_provider.type as 'maid' | 'driver' | 'nurse' | 'gardener' | 'watchman' | 'milkman' | 'physiotherapist',
+        name: aiResponse.context.service_provider.name || undefined
+      } : undefined,
+      category: aiResponse.context.financial.category || undefined,
+      query: input
+    };
+
+    return await this.queryProcessor.process(queryResponse, context);
+  }
+
+  private isSimpleQuery(query: string): boolean {
+    const simplePatterns = ['how much', 'show me', 'list', 'total'];
+    return simplePatterns.some(pattern => 
+      query.toLowerCase().includes(pattern)
+    );
+  }
+
+  private determineQueryType(query: string): 'expense_query' | 'income_query' | 'transaction_query' | 'balance_query' {
+    const lowercaseQuery = query.toLowerCase();
+    if (lowercaseQuery.includes('spent') || lowercaseQuery.includes('expense')) {
+      return 'expense_query';
+    }
+    if (lowercaseQuery.includes('earned') || lowercaseQuery.includes('income')) {
+      return 'income_query';
+    }
+    if (lowercaseQuery.includes('balance')) {
+      return 'balance_query';
+    }
+    return 'transaction_query';
+  }
+
+  private async handleReminderIntent(aiResponse: IntentDetectionResponse, input: string, context?: Context): Promise<ProcessingResult> {
+    const reminderResponse: ReminderResponse = {
+      title: aiResponse.context.service_provider.type ? 
+        `Pay ${aiResponse.context.service_provider.type} ${aiResponse.context.service_provider.name || ''}` :
+        input.replace(/remind me to |remind me |reminder |set reminder /i, ''),
+      due_date: aiResponse.context.temporal.reference_date || new Date().toISOString(),
+      amount: aiResponse.context.financial.amount || undefined,
+      type: this.determineReminderType(aiResponse, input),
+      priority: 'medium'
+    };
+
+    return await this.reminderProcessor.process(reminderResponse, context);
   }
 }

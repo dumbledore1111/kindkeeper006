@@ -1,6 +1,14 @@
 import { openai } from '@/lib/openai'
 import { NextResponse } from 'next/server'
 
+interface OpenAIError extends Error {
+  response?: {
+    data?: unknown;
+    status?: number;
+    statusText?: string;
+  };
+}
+
 export async function GET() {
   try {
     const completion = await openai.chat.completions.create({
@@ -13,14 +21,15 @@ export async function GET() {
       success: true, 
       response: completion.choices[0].message.content 
     })
-  } catch (error: any) {
+  } catch (error) {
+    const err = error as OpenAIError;
     console.error('OpenAI Test Error:', {
-      message: error.message,
-      response: error.response?.data
+      message: err.message,
+      response: err.response?.data
     })
     
     return NextResponse.json(
-      { success: false, error: error.message },
+      { success: false, error: err.message },
       { status: 500 }
     )
   }

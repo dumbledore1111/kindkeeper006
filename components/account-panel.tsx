@@ -10,6 +10,7 @@ import { Popover, PopoverTrigger } from "@/components/ui/popover"
 import { SettingsPopup, AppSettings } from './settings-popup'
 import { supabase } from '@/lib/supabase'
 import { Dialog, DialogContent } from "@/components/ui/dialog"
+import { Database } from '@/types/database'
 
 interface EmergencyContact {
   id: string;
@@ -31,6 +32,20 @@ interface AccountPanelProps {
   open: boolean;
   onClose: () => void;
   onSignOut: () => Promise<void>;
+}
+
+interface UserProfile {
+  id: string;
+  email?: string;
+  full_name?: string;
+  phone_number?: string;
+  user_metadata?: {
+    full_name?: string;
+    name?: string;
+  };
+  profile?: {
+    phone_number?: string;
+  };
 }
 
 export function AccountPanel({ open, onClose, onSignOut }: AccountPanelProps) {
@@ -62,7 +77,7 @@ export function AccountPanel({ open, onClose, onSignOut }: AccountPanelProps) {
     voiceType: 'female',
     theme: 'light' as const,
   })
-  const [user, setUser] = useState<any>(null)
+  const [user, setUser] = useState<UserProfile | null>(null)
 
   useEffect(() => {
     document.documentElement.style.setProperty('--text-base-size', `${appSettings.textSize}px`)
@@ -72,20 +87,12 @@ export function AccountPanel({ open, onClose, onSignOut }: AccountPanelProps) {
     async function loadUserData() {
       const { data: { session } } = await supabase.auth.getSession()
       if (session?.user) {
-        console.log('User data:', {
-          email: session.user.email,
-          metadata: session.user.user_metadata,
-          displayName: session.user.user_metadata?.full_name || session.user.user_metadata?.name
-        });
-
         // First try to get existing profile
         const { data: existingProfile } = await supabase
           .from('profiles')
           .select('*')
           .eq('id', session.user.id)
           .single();
-
-        console.log('Existing profile:', existingProfile); // Debug log
 
         // Update or create profile
         const { data: profile, error } = await supabase
@@ -99,16 +106,12 @@ export function AccountPanel({ open, onClose, onSignOut }: AccountPanelProps) {
           .select()
           .single();
 
-        console.log('Profile update result:', { profile, error }); // Debug log
-
         if (!error && profile) {
           setUser({
             ...session.user,
             profile: profile
           });
           setSavedPhone(profile.phone_number || '');
-        } else {
-          console.error('Profile update error:', error);
         }
 
         // Load emergency contacts
@@ -570,6 +573,7 @@ export function AccountPanel({ open, onClose, onSignOut }: AccountPanelProps) {
               <Button 
                 className="w-full bg-orange-500 hover:bg-orange-600 text-white"
               >
+                <Settings className="h-4 w-4 mr-2" />
                 Settings
               </Button>
             </PopoverTrigger>
@@ -577,8 +581,20 @@ export function AccountPanel({ open, onClose, onSignOut }: AccountPanelProps) {
               initialSettings={appSettings}
               onSettingsChange={(newSettings) => {
                 setAppSettings(newSettings)
-                // Here you would typically save to your backend
-                console.log('New settings:', newSettings)
+                // Save to backend
+                const saveSettings = async () => {
+                  const { data: { session } } = await supabase.auth.getSession()
+                  if (session?.user) {
+                    await supabase
+                      .from('user_settings')
+                      .upsert({
+                        user_id: session.user.id,
+                        ...newSettings,
+                        updated_at: new Date().toISOString()
+                      })
+                  }
+                }
+                saveSettings()
               }}
             />
           </Popover>

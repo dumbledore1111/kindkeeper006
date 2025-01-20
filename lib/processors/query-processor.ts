@@ -33,11 +33,7 @@ Output: {
 }`;
 
 export class QueryProcessor {
-  private contextEngine: ContextEngine;
-
-  constructor(private userId: string) {
-    this.contextEngine = new ContextEngine(userId);
-  }
+  constructor(private userId: string, private contextEngine?: ContextEngine) {}
 
   // Main entry point - handles both text and structured queries
   async process(
@@ -57,7 +53,26 @@ export class QueryProcessor {
       return this.handleStructuredQuery(input, context);
     } catch (error) {
       console.error('Query processing error:', error);
-      throw error;
+      return {
+        success: false,
+        response: "Sorry, I had trouble processing your query.",
+        context: context || {
+          userId: this.userId,
+          currentIntent: {
+            type: 'query',
+            confidence: 0,
+            relatedEvents: []
+          },
+          history: [],
+          recentEvents: [],
+          relatedContexts: [],
+          relatedEvents: [],
+          timeContext: {
+            referenceDate: new Date()
+          }
+        },
+        intent: 'query'
+      };
     }
   }
 
@@ -90,7 +105,7 @@ export class QueryProcessor {
   private async handleComplexQuery(
     query: string | QueryResponse,
     context?: Context
-  ): Promise<ProcessingResult | any> {
+  ): Promise<ProcessingResult> {
     try {
       // Handle text-based complex query
       if (typeof query === 'string') {
@@ -99,33 +114,102 @@ export class QueryProcessor {
           success: true,
           response: aiResponse,
           context: {
+            userId: this.userId,
+            currentIntent: {
+              type: 'query',
+              confidence: 0.9,
+              relatedEvents: []
+            },
             lastIntent: 'query',
             lastQuery: { type: 'complex' as const, query },
             history: context?.history || [],
             currentTransaction: context?.currentTransaction,
-            currentReminder: context?.currentReminder
+            currentReminder: context?.currentReminder,
+            recentEvents: [],
+            relatedContexts: [],
+            relatedEvents: [],
+            timeContext: {
+              referenceDate: new Date()
+            }
           },
           intent: 'query'
         };
       }
 
       // Handle structured complex query
-      const timeRange = this.parseTimeRange(query.time_period);
-      const [expenses, income, balance] = await Promise.all([
+      const timePeriod = query?.time_period || 'this month';
+      const timeRange = this.parseTimeRange(timePeriod);
+      const [expensesResult, incomeResult, balanceResult] = await Promise.all([
         this.getExpenses(timeRange.start, timeRange.end),
         this.getIncome(timeRange.start, timeRange.end),
         this.getBalance(timeRange.start, timeRange.end)
-      ]);
+      ]) as [TransactionResponse[], TransactionResponse[], {
+        income: number;
+        expenses: number;
+        balance: number;
+        transactions: TransactionResponse[];
+      }];
 
-      return {
+      const expenses = expensesResult || [];
+      const income = incomeResult || [];
+      const balance = balanceResult || {
+        income: 0,
+        expenses: 0,
+        balance: 0,
+        transactions: []
+      };
+
+      const defaultContext: Context = {
+        userId: this.userId,
+        currentIntent: {
+          type: 'query',
+          confidence: 0.9,
+          relatedEvents: []
+        },
+        history: [],
+        recentEvents: [],
+        relatedContexts: [],
+        relatedEvents: [],
+        timeContext: {
+          referenceDate: new Date()
+        }
+      };
+
+      const response = this.formatComplexResponse({
         expenses,
         income,
         balance,
-        period: query.time_period
+        period: timePeriod
+      });
+
+      return {
+        success: true,
+        response,
+        context: context || defaultContext,
+        intent: 'query'
       };
     } catch (error) {
-      logger.error('Complex query processing error:', error);
-      throw error;
+      console.error('Complex query processing error:', error);
+      return {
+        success: false,
+        response: "Sorry, I had trouble processing your query.",
+        context: context || {
+          userId: this.userId,
+          currentIntent: {
+            type: 'query',
+            confidence: 0,
+            relatedEvents: []
+          },
+          history: [],
+          recentEvents: [],
+          relatedContexts: [],
+          relatedEvents: [],
+          timeContext: {
+            referenceDate: new Date()
+          }
+        },
+        intent: 'query'
+      };
     }
   }
 
@@ -477,45 +561,59 @@ export class QueryProcessor {
 
   // Helper to generate visual-friendly data
   private formatForVisualization(analysis: SpendingAnalysis) {
+    const defaultCategories = {} as Record<string, {
+      total: number;
+      count: number;
+      average: number;
+      highest: number;
+      lowest: number;
+      trend: 'increasing' | 'decreasing' | 'stable';
+    }>;
+
+    const categories = analysis?.categories || defaultCategories;
+    const categoryValues = Object.values(categories);
+    const datasets = [{
+      data: categoryValues.map(c => c?.total || 0),
+      trends: categoryValues.map(c => c?.trend || 'stable')
+    }];
+
     return {
       chartData: {
-        labels: Object.keys(analysis.categories),
-        datasets: [{
-          data: Object.values(analysis.categories).map(c => c.total),
-          trends: Object.values(analysis.categories).map(c => c.trend)
-        }]
+        labels: Object.keys(categories),
+        datasets
       },
       summaryCards: this.generateSummaryCards(analysis),
-      insightsList: analysis.insights
+      insightsList: analysis?.insights || []
     };
   }
 
   private generateSummaryCards(analysis: SpendingAnalysis) {
+    const categories = analysis.categories || {};
     return {
       totalSpending: {
         title: 'Total Spending',
-        value: analysis.total_spending,
-        trend: this.calculateOverallTrend(analysis),
+        value: analysis.total_spending || 0,
+        trend: this.calculateOverallTrend(categories),
         change: this.calculatePercentageChange(analysis)
       },
       topCategories: {
         title: 'Top Categories',
-        items: this.getTopCategories(analysis, 3)
+        items: this.getTopCategories(categories, 3)
       },
       savings: {
         title: 'Potential Savings',
-        value: this.calculatePotentialSavings(analysis),
-        suggestions: this.generateSavingSuggestions(analysis)
+        value: this.calculatePotentialSavings(categories),
+        suggestions: this.generateSavingSuggestions(categories)
       },
       alerts: {
         title: 'Alerts & Insights',
-        items: this.generateAlerts(analysis)
+        items: this.generateAlerts(categories)
       }
     };
   }
 
-  private calculateOverallTrend(analysis: SpendingAnalysis): 'up' | 'down' | 'stable' {
-    const trends = Object.values(analysis.categories).map(c => c.trend);
+  private calculateOverallTrend(categories: Record<string, { total: number; trend: string }>): 'up' | 'down' | 'stable' {
+    const trends = Object.values(categories).map(c => c?.trend || 'stable');
     const increasingCount = trends.filter(t => t === 'increasing').length;
     const decreasingCount = trends.filter(t => t === 'decreasing').length;
 
@@ -525,40 +623,38 @@ export class QueryProcessor {
   }
 
   private calculatePercentageChange(analysis: SpendingAnalysis): number {
-    // Calculate percentage change from previous period
-    // This is a simplified example - you might want to get actual historical data
-    const previousTotal = analysis.total_spending * 0.9; // Example
-    return ((analysis.total_spending - previousTotal) / previousTotal) * 100;
+    const previousTotal = (analysis.total_spending || 0) * 0.9; // Example
+    const currentTotal = analysis.total_spending || 0;
+    return ((currentTotal - previousTotal) / previousTotal) * 100;
   }
 
-  private getTopCategories(analysis: SpendingAnalysis, limit: number) {
-    return Object.entries(analysis.categories)
-      .sort(([, a], [, b]) => b.total - a.total)
+  private getTopCategories(categories: Record<string, { total: number; trend: string }>, limit: number) {
+    return Object.entries(categories)
+      .sort(([, a], [, b]) => (b?.total || 0) - (a?.total || 0))
       .slice(0, limit)
       .map(([category, data]) => ({
         category,
-        amount: data.total,
-        percentage: (data.total / analysis.total_spending) * 100,
-        trend: data.trend
+        amount: data?.total || 0,
+        percentage: data?.total ? (data.total / Object.values(categories).reduce((sum, c) => sum + (c?.total || 0), 0)) * 100 : 0,
+        trend: data?.trend || 'stable'
       }));
   }
 
-  private calculatePotentialSavings(analysis: SpendingAnalysis): number {
-    // Example logic - you might want to implement more sophisticated calculations
-    return Object.values(analysis.categories).reduce((total, category) => {
-      const potentialSaving = category.total * 0.1; // Assume 10% potential saving
+  private calculatePotentialSavings(categories: Record<string, { total: number; trend: string }>): number {
+    return Object.values(categories).reduce((total, category) => {
+      const potentialSaving = (category?.total || 0) * 0.1; // Assume 10% potential saving
       return total + potentialSaving;
     }, 0);
   }
 
-  private generateSavingSuggestions(analysis: SpendingAnalysis): string[] {
+  private generateSavingSuggestions(categories: Record<string, { total: number; trend: string; average?: number }>): string[] {
     const suggestions: string[] = [];
     
-    Object.entries(analysis.categories).forEach(([category, data]) => {
-      if (data.trend === 'increasing') {
+    Object.entries(categories).forEach(([category, data]) => {
+      if (data?.trend === 'increasing') {
         suggestions.push(`Consider reviewing your ${category} expenses`);
       }
-      if (data.average && data.total > data.average * 1.2) {
+      if (data?.average && data.total > data.average * 1.2) {
         suggestions.push(`${category} spending is 20% above average`);
       }
     });
@@ -566,7 +662,7 @@ export class QueryProcessor {
     return suggestions;
   }
 
-  private generateAlerts(analysis: SpendingAnalysis): Array<{
+  private generateAlerts(categories: Record<string, { total: number; trend: string; highest?: number }>): Array<{
     type: 'warning' | 'info' | 'success';
     message: string;
   }> {
@@ -576,30 +672,31 @@ export class QueryProcessor {
     }> = [];
 
     // Check for unusual spending
-    Object.entries(analysis.categories).forEach(([category, data]) => {
-      if (data.total > data.highest * 1.2) {
+    Object.entries(categories).forEach(([category, data]) => {
+      if (data?.highest && data.total > data.highest * 1.2) {
         alerts.push({
-          type: 'warning' as const,
+          type: 'warning',
           message: `Unusually high spending in ${category}`
         });
       }
     });
 
     // Check for potential savings
-    if (this.calculatePotentialSavings(analysis) > analysis.total_spending * 0.15) {
+    const totalSpending = Object.values(categories).reduce((sum, c) => sum + (c?.total || 0), 0);
+    if (this.calculatePotentialSavings(categories) > totalSpending * 0.15) {
       alerts.push({
-        type: 'info' as const,
+        type: 'info',
         message: 'Significant saving opportunities identified'
       });
     }
 
     // Add positive feedback
-    const stableCategories = Object.entries(analysis.categories)
-      .filter(([, data]) => data.trend === 'stable')
+    const stableCategories = Object.entries(categories)
+      .filter(([, data]) => data?.trend === 'stable')
       .length;
-    if (stableCategories > Object.keys(analysis.categories).length * 0.5) {
+    if (stableCategories > Object.keys(categories).length * 0.5) {
       alerts.push({
-        type: 'success' as const,
+        type: 'success',
         message: 'Most spending categories are stable'
       });
     }
@@ -607,93 +704,34 @@ export class QueryProcessor {
     return alerts;
   }
 
-  async processQuery(query: QueryResponse): Promise<ProcessingResult> {
-    try {
-      let response: string;
-      let data: any;
+  private formatComplexResponse(data: {
+    expenses: TransactionResponse[];
+    income: TransactionResponse[];
+    balance: {
+      income: number;
+      expenses: number;
+      balance: number;
+      transactions: TransactionResponse[];
+    };
+    period: string;
+  }): string {
+    const formatAmount = (amount: number) => 
+      new Intl.NumberFormat('en-IN', {
+        style: 'currency',
+        currency: 'INR',
+        maximumFractionDigits: 0
+      }).format(amount);
 
-      switch (query.type) {
-        case 'expense_query':
-          data = await this.queryExpenses(query);
-          response = this.formatExpenseResponse(data);
-          break;
-        case 'income_query':
-          data = await this.queryIncome(query);
-          response = this.formatIncomeResponse(data);
-          break;
-        case 'transaction_query':
-          data = await this.queryTransactions(query);
-          response = this.formatTransactionResponse(data);
-          break;
-        case 'balance_query':
-          data = await this.queryBalance();
-          response = this.formatBalanceResponse(data);
-          break;
-        default:
-          data = await this.handleComplexQuery(query);
-          response = this.formatComplexResponse(data);
-      }
-
-      return {
-        success: true,
-        response,
-        context: { userId: this.userId } as Context,
-        intent: 'query',
-        dbOperations: []
-      };
-    } catch (error) {
-      logger.error('Query processing error:', error);
-      throw error;
-    }
-  }
-
-  private async queryExpenses(query: QueryResponse): Promise<any> {
-    const timeRange = this.parseTimeRange(query.time_period);
-    return this.getExpenses(timeRange.start, timeRange.end, query.category);
-  }
-
-  private formatExpenseResponse(data: any): string {
-    const total = data.reduce((sum: number, expense: any) => sum + expense.amount, 0);
-    return `Total expenses: ₹${total}. ${data.length} transactions found.`;
-  }
-
-  private async queryIncome(query: QueryResponse): Promise<any> {
-    const timeRange = this.parseTimeRange(query.time_period);
-    return this.getIncome(timeRange.start, timeRange.end);
-  }
-
-  private formatIncomeResponse(data: any): string {
-    const total = data.reduce((sum: number, income: any) => sum + income.amount, 0);
-    return `Total income: ₹${total}. ${data.length} transactions found.`;
-  }
-
-  private async queryTransactions(query: QueryResponse): Promise<any> {
-    const timeRange = this.parseTimeRange(query.time_period);
-    return this.getTransactions(timeRange.start, timeRange.end, query.provider);
-  }
-
-  private formatTransactionResponse(data: any): string {
-    return data.map((t: any) => 
-      `${new Date(t.date).toLocaleDateString()}: ₹${t.amount} - ${t.description}`
+    const transactions = data.balance.transactions.slice(0, 5).map(t => 
+      `- ${formatAmount(t.amount)} for ${t.description || 'Unknown'}`
     ).join('\n');
-  }
 
-  private async queryBalance(): Promise<any> {
-    const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    return this.getBalance(monthStart, now);
-  }
+    return `Here's your financial summary for ${data.period}:
+Total Income: ${formatAmount(data.balance.income)}
+Total Expenses: ${formatAmount(data.balance.expenses)}
+Balance: ${formatAmount(data.balance.balance)}
 
-  private formatBalanceResponse(data: any): string {
-    return `Current balance: ₹${data.balance}\nIncome: ₹${data.income}\nExpenses: ₹${data.expenses}`;
+Recent Transactions:
+${transactions}`;
   }
-
-  private formatComplexResponse(data: any): string {
-    return `Analysis for ${data.period}:\n` +
-           `Income: ₹${data.income.reduce((sum: number, i: any) => sum + i.amount, 0)}\n` +
-           `Expenses: ₹${data.expenses.reduce((sum: number, e: any) => sum + e.amount, 0)}\n` +
-           `Balance: ₹${data.balance.balance}`;
-  }
-
-  // ... implement other required methods ...
-} 
+}

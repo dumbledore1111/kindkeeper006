@@ -1,4 +1,5 @@
 import type { TransactionType, CategoryType } from '@/types/database';
+import type { PaymentMethod, ServiceProviderType } from './database'
 
 export type { TransactionType, CategoryType };
 
@@ -21,14 +22,23 @@ export interface TransactionResponse {
 }
 
 export interface AttendanceResponse {
-  provider_type: ServiceProvider['type'];
+  provider_type: ServiceProviderType;
   name: string;
   status: 'present' | 'absent';
   date: string;
   extra_info?: string;
   payment?: {
     amount: number;
+    method?: PaymentMethod;
     paid: boolean;
+  };
+  wage_info?: {
+    amount: number;
+    frequency: 'hourly' | 'daily' | 'weekly' | 'monthly';
+    schedule?: {
+      visits_per_week?: number;
+      hours_per_visit?: number;
+    };
   };
 }
 
@@ -74,14 +84,28 @@ export interface AIResponse {
   reminder?: ReminderResponse;
   attendance?: AttendanceResponse;
   query?: QueryResponse;
+  needsMoreInfo?: {
+    field: 'amount' | 'date' | 'provider_name' | 'frequency' | 'description';
+    context: string;
+  };
 }
 
 export interface ProcessingResult {
   success: boolean;
-  response: string;
-  context: Context;
-  intent: Intent['type'];
+  data?: any;
+  error?: string;
+  message?: string;
+  type?: string;
   confidence?: number;
+  relatedEvents?: any[];
+  response?: string;
+  intent?: string;
+  dbOperations?: Array<{
+    table: string;
+    operation: string;
+    data: Record<string, any>;
+  }>;
+  context?: Context;
   entities?: {
     category?: string;
     amount?: number;
@@ -93,11 +117,6 @@ export interface ProcessingResult {
     type: string;
     context: string;
   };
-  dbOperations?: Array<{
-    table: string;
-    operation: string;
-    data: Record<string, any>;
-  }>;
 }
 
 export type QueryType = 'expense_query' | 'income_query' | 'transaction_query' | 'balance_query' | 'complex';
@@ -114,6 +133,17 @@ export interface Context {
   }>;
   currentTransaction?: Partial<TransactionResponse>;
   currentReminder?: Partial<ReminderResponse>;
+  currentAttendance?: Partial<AttendanceResponse>;
+  queryResult?: {
+    presentDays?: number;
+    absentDays?: number;
+    amountDue?: number;
+    timeRange?: {
+      start: Date;
+      end: Date;
+      description: string;
+    };
+  };
   recentEvents: any[];
   relatedContexts: any[];
   relatedEvents: any[];
@@ -131,7 +161,7 @@ export interface DatabaseOperation {
 export interface RelationshipMap {
   primary: string;
   related: string[];
-  type: 'payment' | 'attendance' | 'category' | 'time';
+  type: string;
   strength: number;
 }
 

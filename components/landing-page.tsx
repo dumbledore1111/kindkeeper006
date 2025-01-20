@@ -173,7 +173,7 @@ export default function KindKeeperLandingPage() {
               <div className="relative">
                 <blockquote className="text-white text-center">
                   <p className="text-2xl italic mb-6">
-                    "KindKeeper has transformed the way I manage my finances. It's so easy to use, and I love being able to track my expenses just by talking!"
+                    &ldquo;KindKeeper has transformed the way I manage my finances. It&apos;s so easy to use, and I love being able to track my expenses just by talking!&rdquo;
                   </p>
                   <footer className="font-semibold text-white/90">- Mary Johnson, Retired Teacher</footer>
                 </blockquote>

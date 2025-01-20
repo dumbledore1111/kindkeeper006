@@ -3,6 +3,7 @@ import { logger } from '@/lib/logger'
 import { handleApiError } from '@/lib/error-handler'
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
 import { cookies } from 'next/headers'
+import { Database } from '@/types/database'
 
 // Voice configuration constants
 const VOICE_CONFIG = {
@@ -10,12 +11,24 @@ const VOICE_CONFIG = {
   DEFAULT_STABILITY: 0.7,
   DEFAULT_SIMILARITY: 0.7,
   RATE_LIMIT: 10
+} as const
+
+interface VoiceSettings {
+  stability: number;
+  similarity_boost: number;
+  style?: number;
+  speaking_rate: number;
+}
+
+interface RequestBody {
+  text: string;
+  responseType?: 'simple' | 'complex' | 'query' | 'error';
 }
 
 export async function POST(req: Request) {
   try {
     // Check auth
-    const supabase = createRouteHandlerClient({ cookies })
+    const supabase = createRouteHandlerClient<Database>({ cookies })
     const { data: { session } } = await supabase.auth.getSession()
     
     if (!session) {
@@ -30,10 +43,10 @@ export async function POST(req: Request) {
       throw new Error('ElevenLabs API key not configured')
     }
 
-    const { text, responseType = 'simple', emotion = 'neutral' } = await req.json()
+    const { text, responseType = 'simple' } = await req.json() as RequestBody
 
     // Voice settings based on response type
-    const voiceSettings = getVoiceSettings(responseType, emotion)
+    const voiceSettings = getVoiceSettings(responseType)
 
     const response = await fetch(
       `https://api.elevenlabs.io/v1/text-to-speech/${VOICE_CONFIG.INDIAN_VOICE_ID}`,
@@ -45,7 +58,7 @@ export async function POST(req: Request) {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          text: prepareText(text, responseType),
+          text: prepareText(text),
           model_id: 'eleven_multilingual_v2',
           voice_settings: voiceSettings
         }),
@@ -73,7 +86,7 @@ export async function POST(req: Request) {
   }
 }
 
-function getVoiceSettings(responseType: string, emotion: string) {
+function getVoiceSettings(responseType: RequestBody['responseType']): VoiceSettings {
   switch(responseType) {
     case 'complex':
       return {
@@ -105,20 +118,13 @@ function getVoiceSettings(responseType: string, emotion: string) {
   }
 }
 
-function prepareText(text: string, responseType: string): string {
-  // Add SSML tags for better pronunciation
-  const ssml = `<speak>
-    ${addPronunciationGuides(text)}
-  </speak>`
-
-  return ssml
+function prepareText(text: string): string {
+  return `<speak>${addPronunciationGuides(text)}</speak>`
 }
 
 function addPronunciationGuides(text: string): string {
-  // Add pronunciation guides for Indian English
   return text
     .replace(/₹/g, '<say-as interpret-as="currency">rupees</say-as>')
     .replace(/(\d+),(\d+)/g, '<say-as interpret-as="number">$1$2</say-as>')
-    // Add more Indian English pronunciation patterns
     .replace(/(\d+)\/(\d+)\/(\d+)/g, '<say-as interpret-as="date">$1/$2/$3</say-as>')
 } 

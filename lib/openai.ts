@@ -170,6 +170,13 @@ async function getCurrentUserId(): Promise<string> {
   throw new Error('No user ID available');
 }
 
+// Helper function to clean OpenAI responses
+function cleanOpenAIResponse(content: string): string {
+  // Remove markdown code block formatting if present
+  const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/);
+  return jsonMatch ? jsonMatch[1].trim() : content.trim();
+}
+
 export async function processChatCompletion(inputMessage: string, context?: StructuredContext) {
   try {
     const userId = await getCurrentUserId();
@@ -184,13 +191,13 @@ export async function processChatCompletion(inputMessage: string, context?: Stru
       model: "gpt-4",
       messages: [
         { 
-          role: "system", 
+          role: "system" as const, 
           content: inputMessage.toLowerCase().includes('category') ? 
-            CATEGORY_CREATION_PROMPT : 
-            TRANSACTION_PROMPT
+            `${CATEGORY_CREATION_PROMPT}\nRespond ONLY with a JSON object.` : 
+            `${TRANSACTION_PROMPT}\nRespond ONLY with a JSON object.`
         },
         { 
-          role: "user", 
+          role: "user" as const, 
           content: JSON.stringify({
             message: inputMessage,
             context: context ? {
@@ -200,15 +207,15 @@ export async function processChatCompletion(inputMessage: string, context?: Stru
             } : {}
           })
         }
-      ],
-      response_format: { type: "json_object" }
+      ]
     });
 
     if (!completion.choices[0].message?.content) {
       throw new Error('No response from OpenAI');
     }
     
-    const result = JSON.parse(completion.choices[0].message.content);
+    const cleanedContent = cleanOpenAIResponse(completion.choices[0].message.content);
+    const result = JSON.parse(cleanedContent);
     
     if (result.intent === 'create_category') {
       const categoryResponse = await fetch('/api/category', {
