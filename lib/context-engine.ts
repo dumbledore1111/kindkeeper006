@@ -6,7 +6,6 @@ import {
 } from './input-processor';
 import { EventProcessor } from './event-processor';
 import type { 
-  AIResponse, 
   ProcessingResult,
   Context,
   DatabaseOperation,
@@ -26,7 +25,8 @@ import type {
   QueryResponse,
   TransactionResponse,
   ReminderResponse,
-  AttendanceResponse
+  AttendanceResponse,
+  ServiceProvider
 } from '@/types/responses';
 import { updateTransaction } from './transaction-updater';
 import { QueryProcessor } from './processors/query-processor';
@@ -35,12 +35,14 @@ import { createClient } from '@supabase/supabase-js';
 import type { Database } from '@/types/database';
 import { logger } from './logger';
 import { openai, SYSTEM_PROMPTS } from './openai';
-import { IntentDetector, IntentDetectionResponse, IncompleteTransaction, IncompleteAttendance } from './intent-detector'
-import { ReminderProcessor } from './processors/reminder-processor'
-import { AttendanceProcessor } from './processors/attendance-processor'
-import type { PaymentMethod, ServiceProviderType } from '@/types/database'
-import { supabase } from '@/lib/supabase'
+import { IntentDetector } from './intent-detector';
+import type { IntentDetectionResponse } from './intent-detector';
+import { ReminderProcessor } from './processors/reminder-processor';
+import { AttendanceProcessor } from './processors/attendance-processor';
+import type { PaymentMethod, ServiceProviderType } from '@/types/database';
+import { supabase } from '@/lib/supabase';
 import { TransactionProcessor } from './processors/transaction-processor';
+import { DateParser } from './date-parser';
 
 interface HistoricalData {
   amounts: number[];
@@ -74,6 +76,32 @@ function formatError(error: unknown): string {
   return String(error);
 }
 
+interface AIResponse {
+  intent: 'transaction' | 'query' | 'reminder' | 'attendance' | 'general';
+  confidence: number;
+  suggestedResponse: string;
+  transaction?: TransactionResponse;
+  reminder?: ReminderResponse;
+  attendance?: AttendanceResponse;
+  query?: QueryResponse;
+}
+
+// Add missing type
+interface IncompleteAttendance {
+  provider_type?: string;
+  name?: string;
+  status?: 'present' | 'absent';
+  date?: string;
+  wage_info?: {
+    amount: number;
+    frequency: 'hourly' | 'daily' | 'weekly' | 'monthly';
+    schedule?: {
+      visits_per_week?: number;
+      hours_per_visit?: number;
+    };
+  };
+}
+
 export class ContextEngine {
   private userId: string;
   private currentIntent: Intent;
@@ -92,7 +120,7 @@ export class ContextEngine {
       relatedEvents: []
     };
     this.context = this.initializeContext(userId);
-    this.queryProcessor = new QueryProcessor(userId);
+    this.queryProcessor = new QueryProcessor(userId, this);
     this.intentDetector = new IntentDetector(userId);
     this.reminderProcessor = new ReminderProcessor(userId);
     this.attendanceProcessor = new AttendanceProcessor(userId);
@@ -447,44 +475,40 @@ export class ContextEngine {
   // Main processInput method
   async processInput(input: string, context?: Context): Promise<ProcessingResult> {
     try {
-      const aiResponse = await this.intentDetector.detectIntent(input);
+      const currentContext = context || this.createDefaultContext();
+      const intentResponse = await this.intentDetector.detectIntent(input, currentContext);
       
-      if (!aiResponse) {
+      if (!intentResponse) {
         return {
           success: false,
           response: "I couldn't understand that. Could you please rephrase?",
-          context: context || this.createDefaultContext(),
+          context: currentContext,
           intent: 'unknown'
         };
       }
 
-      // Handle each intent type
-      switch (aiResponse.intent.primary) {
+      switch (intentResponse.intent.primary) {
         case 'transaction':
-          return await this.handleTransactionIntent(aiResponse, context);
-        
-        case 'attendance':
-          return await this.handleAttendanceIntent(aiResponse, input, context);
-        
-        case 'query':
-          return await this.handleQueryIntent(aiResponse, input, context);
-        
+          return this.handleTransactionIntent(intentResponse, currentContext);
         case 'reminder':
-          return await this.handleReminderIntent(aiResponse, input, context);
-        
+          return this.handleReminderIntent(intentResponse, currentContext);
+        case 'attendance':
+          return this.handleAttendanceIntent(intentResponse, currentContext);
+        case 'query':
+          return this.handleQueryIntent(intentResponse, currentContext);
         default:
           return {
             success: false,
-            response: "I'm not sure how to handle that request.",
-            context: context || this.createDefaultContext(),
+            response: "I'm not sure how to handle that. Could you please rephrase?",
+            context: currentContext,
             intent: 'unknown'
           };
       }
     } catch (error) {
-      console.error('Error processing input:', error);
+      logger.error('Error processing input:', error);
       return {
         success: false,
-        response: "Sorry, something went wrong. Please try again.",
+        response: "Sorry, I encountered an error. Could you please try again?",
         context: context || this.createDefaultContext(),
         intent: 'unknown'
       };
@@ -1347,13 +1371,33 @@ export class ContextEngine {
     input: string,
     systemPrompt: string
   ): Promise<AIResponse> {
-    // Implementation for AI processing
-    // This should use your OpenAI or similar service
-    return {
-      intent: 'general',
-      confidence: 0.8,
-      suggestedResponse: 'Default response'
-    };
+    try {
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: input }
+        ]
+      });
+
+      const content = completion.choices[0]?.message?.content;
+      if (!content) {
+        throw new Error('No response from AI');
+      }
+
+      return {
+        intent: 'general',
+        confidence: 0.8,
+        suggestedResponse: content
+      };
+    } catch (error) {
+      logger.error('AI processing error:', error);
+      return {
+        intent: 'general',
+        confidence: 0.5,
+        suggestedResponse: 'I apologize, but I had trouble understanding that.'
+      };
+    }
   }
 
   private async routeToProcessor(
@@ -1998,6 +2042,16 @@ export class ContextEngine {
 
   private async processAttendance(attendance: AttendanceResponse): Promise<ProcessingResult> {
     try {
+      // Get existing attendance record if any
+      const { data: existingAttendance } = await supabase
+        .from('attendance_logs')
+        .select('*')
+        .eq('user_id', this.userId)
+        .eq('provider_type', attendance.provider_type)
+        .eq('name', attendance.name)
+        .order('created_at', { ascending: false })
+        .limit(1);
+
       // Process attendance data
       const dbOperation = {
         table: 'attendance_logs',
@@ -2005,7 +2059,9 @@ export class ContextEngine {
         data: {
           ...attendance,
           user_id: this.userId,
-          created_at: new Date()
+          created_at: new Date(),
+          // Preserve existing wage info if available
+          wage_info: attendance.wage_info || (existingAttendance?.[0]?.wage_info || undefined)
         }
       };
 
@@ -2014,10 +2070,27 @@ export class ContextEngine {
         .from('attendance_logs')
         .insert(dbOperation.data);
 
+      // Format response based on whether this is a wage update or status update
+      let response = '';
+      if (attendance.wage_info) {
+        const frequency = attendance.wage_info.frequency;
+        response = `Updated wage information for ${attendance.provider_type} ${attendance.name}: ₹${attendance.wage_info.amount} ${frequency}`;
+      } else {
+        response = `Attendance recorded for ${attendance.provider_type} ${attendance.name}: ${attendance.status}`;
+      }
+
       return {
         success: true,
-        response: `Attendance recorded for ${attendance.provider_type} ${attendance.name}: ${attendance.status}`,
-        context: this.context,
+        response,
+        context: {
+          ...this.context,
+          currentIntent: {
+            type: 'attendance',
+            confidence: 1,
+            relatedEvents: []
+          },
+          lastIntent: 'attendance'
+        },
         intent: 'attendance',
         dbOperations: [dbOperation]
       };
@@ -2279,100 +2352,80 @@ export class ContextEngine {
     return 'other';
   }
 
-  private async handleTransactionIntent(aiResponse: IntentDetectionResponse, context?: Context): Promise<ProcessingResult> {
-    const amount = aiResponse.context.financial.amount;
-    const category = aiResponse.context.financial.category;
-    
-    if (!amount) {
-      return {
-        success: false,
-        response: "Could you please specify the amount?",
-        context: context || this.createDefaultContext(),
-        intent: 'transaction'
+  private async handleTransactionIntent(intentResponse: IntentDetectionResponse, context: Context): Promise<ProcessingResult> {
+    // If there's a service provider and wage information, this should be handled by attendance
+    if (intentResponse.context.service_provider.type && intentResponse.context.financial.amount) {
+      const attendanceResponse: AttendanceResponse = {
+        provider_type: intentResponse.context.service_provider.type as ServiceProviderType,
+        name: intentResponse.context.service_provider.name || '',
+        status: 'present',
+        date: intentResponse.context.temporal.reference_date || new Date().toISOString(),
+        wage_info: {
+          amount: intentResponse.context.financial.amount,
+          frequency: 'daily'
+        }
       };
+      return this.attendanceProcessor.process(attendanceResponse, context);
     }
 
+    // Handle regular transaction
     const transactionResponse: TransactionResponse = {
-      type: 'expense',
-      amount,
-      description: category ? `Payment for ${category}` : 'Payment',
-      category: category || 'miscellaneous',
-      payment_method: (aiResponse.context.financial.payment_method || 'CASH') as PaymentMethod,
-      date: aiResponse.context.temporal.reference_date || new Date().toISOString(),
-      service_provider: aiResponse.context.service_provider.type ? {
-        type: aiResponse.context.service_provider.type as 'maid' | 'driver' | 'nurse' | 'gardener' | 'watchman' | 'milkman' | 'physiotherapist',
-        name: aiResponse.context.service_provider.name || ''
+      type: 'expense', // Default to expense
+      amount: intentResponse.context.financial.amount || 0,
+      description: intentResponse.context.financial.category || 'miscellaneous',
+      payment_method: intentResponse.context.financial.payment_method as PaymentMethod || 'CASH',
+      category: intentResponse.context.financial.category || 'miscellaneous',
+      date: intentResponse.context.temporal.reference_date || new Date().toISOString()
+    };
+
+    return this.transactionProcessor.processTransaction(transactionResponse, context);
+  }
+
+  private async handleReminderIntent(intentResponse: IntentDetectionResponse, context: Context): Promise<ProcessingResult> {
+    const reminderResponse: ReminderResponse = {
+      type: this.determineReminderType(intentResponse, context.input || ''),
+      title: intentResponse.context.financial.category || 'reminder',
+      due_date: intentResponse.context.temporal.reference_date || new Date().toISOString(),
+      frequency: intentResponse.context.temporal.frequency as 'daily' | 'weekly' | 'monthly' | undefined,
+      amount: intentResponse.context.financial.amount || undefined
+    };
+
+    return this.reminderProcessor.process(reminderResponse, context);
+  }
+
+  private async handleAttendanceIntent(intentResponse: IntentDetectionResponse, context: Context): Promise<ProcessingResult> {
+    const attendanceResponse: AttendanceResponse = {
+      provider_type: intentResponse.context.service_provider.type as ServiceProviderType,
+      name: intentResponse.context.service_provider.name || '',
+      status: 'present',
+      date: intentResponse.context.temporal.reference_date || new Date().toISOString(),
+      wage_info: intentResponse.context.financial.amount ? {
+        amount: intentResponse.context.financial.amount,
+        frequency: (intentResponse.context.temporal.frequency || 'daily') as 'daily' | 'weekly' | 'monthly' | 'hourly'
       } : undefined
     };
-    
-    return await this.transactionProcessor.processTransaction(transactionResponse, context);
+
+    return this.attendanceProcessor.process(attendanceResponse, context);
   }
 
-  private async handleAttendanceIntent(aiResponse: IntentDetectionResponse, input: string, context?: Context): Promise<ProcessingResult> {
-    const attendanceResponse: AttendanceResponse = {
-      provider_type: aiResponse.context.service_provider.type as 'maid' | 'driver' | 'nurse' | 'gardener' | 'watchman' | 'milkman' | 'physiotherapist',
-      name: aiResponse.context.service_provider.name || '',
-      status: input.toLowerCase().includes('absent') || input.toLowerCase().includes('leave') ? 'absent' : 'present',
-      date: aiResponse.context.temporal.reference_date || new Date().toISOString()
-    };
-
-    return await this.attendanceProcessor.process(attendanceResponse, context);
-  }
-
-  private async handleQueryIntent(aiResponse: IntentDetectionResponse, input: string, context?: Context): Promise<ProcessingResult> {
-    // For simple queries, just pass the input string
-    if (this.isSimpleQuery(input)) {
-      return await this.queryProcessor.process(input, context);
-    }
-
-    // For complex queries, construct a QueryResponse
-    const queryType = this.determineQueryType(input);
+  private async handleQueryIntent(intentResponse: IntentDetectionResponse, context: Context): Promise<ProcessingResult> {
     const queryResponse: QueryResponse = {
-      type: queryType,
-      time_period: aiResponse.context.temporal.reference_date ? 'custom' : 'this month',
-      provider: aiResponse.context.service_provider.type ? {
-        type: aiResponse.context.service_provider.type as 'maid' | 'driver' | 'nurse' | 'gardener' | 'watchman' | 'milkman' | 'physiotherapist',
-        name: aiResponse.context.service_provider.name || undefined
+      type: this.determineQueryType(intentResponse.context.financial.category || ''),
+      category: intentResponse.context.financial.category || undefined,
+      time_period: intentResponse.context.temporal.reference_date ? 'custom' : 'this_month',
+      provider: intentResponse.context.service_provider.type ? {
+        type: intentResponse.context.service_provider.type as ServiceProvider['type'],
+        name: intentResponse.context.service_provider.name || undefined
       } : undefined,
-      category: aiResponse.context.financial.category || undefined,
-      query: input
+      filter: 'all',
+      query: intentResponse.context.financial.category || undefined,
+      transaction: intentResponse.context.financial.amount ? {
+        amount: intentResponse.context.financial.amount,
+        type: 'expense',
+        description: intentResponse.context.financial.category || undefined
+      } : undefined
     };
 
-    return await this.queryProcessor.process(queryResponse, context);
-  }
-
-  private isSimpleQuery(query: string): boolean {
-    const simplePatterns = ['how much', 'show me', 'list', 'total'];
-    return simplePatterns.some(pattern => 
-      query.toLowerCase().includes(pattern)
-    );
-  }
-
-  private determineQueryType(query: string): 'expense_query' | 'income_query' | 'transaction_query' | 'balance_query' {
-    const lowercaseQuery = query.toLowerCase();
-    if (lowercaseQuery.includes('spent') || lowercaseQuery.includes('expense')) {
-      return 'expense_query';
-    }
-    if (lowercaseQuery.includes('earned') || lowercaseQuery.includes('income')) {
-      return 'income_query';
-    }
-    if (lowercaseQuery.includes('balance')) {
-      return 'balance_query';
-    }
-    return 'transaction_query';
-  }
-
-  private async handleReminderIntent(aiResponse: IntentDetectionResponse, input: string, context?: Context): Promise<ProcessingResult> {
-    const reminderResponse: ReminderResponse = {
-      title: aiResponse.context.service_provider.type ? 
-        `Pay ${aiResponse.context.service_provider.type} ${aiResponse.context.service_provider.name || ''}` :
-        input.replace(/remind me to |remind me |reminder |set reminder /i, ''),
-      due_date: aiResponse.context.temporal.reference_date || new Date().toISOString(),
-      amount: aiResponse.context.financial.amount || undefined,
-      type: this.determineReminderType(aiResponse, input),
-      priority: 'medium'
-    };
-
-    return await this.reminderProcessor.process(reminderResponse, context);
+    return this.queryProcessor.processQuery(queryResponse, context);
   }
 }

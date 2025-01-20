@@ -37,10 +37,13 @@ export const SYSTEM_PROMPTS = {
   1. Detect primary intent based on keywords and context
   2. Identify any missing required fields based on intent
   3. Extract temporal context (dates, recurring patterns)
-  4. Extract financial details (amounts, payment methods)
-  5. Identify service provider details if present
-  6. Set processor based on primary intent
-  7. Confidence should be between 0 and 1
+  4. For temporal.reference_date:
+     - Use null when user says "today" or current date is implied
+     - Only set a specific date when user mentions a different date
+  5. Extract financial details (amounts, payment methods)
+  6. Identify service provider details if present
+  7. Set processor based on primary intent
+  8. Confidence should be between 0 and 1
 
   Examples:
   User: "i bought groceries for 600 rupees today"
@@ -54,7 +57,7 @@ export const SYSTEM_PROMPTS = {
     },
     "context": {
       "temporal": {
-        "reference_date": "2024-01-16T00:00:00.000Z",
+        "reference_date": null,
         "is_recurring": false,
         "frequency": null
       },
@@ -164,7 +167,7 @@ export const SYSTEM_PROMPTS = {
   Category Rules:
   - groceries: food, grocery, vegetables, fruits, milk, meat, spices, rice, dal, oil, bread, eggs, juice, snacks, water
   - home_utilities: broom, mop, detergent, electronics, clothes, repair, plumber, electrician, furniture, maintenance, cleaning, soap, supplies
-  - bills: electricity, water bill, gas, tax, maintenance, phone bill, mobile, internet, cable, dish, broadband, wifi
+  - utilities: electricity, water bill, gas, phone bill, mobile, internet, cable, dish, broadband, wifi, utility bills
   - online_shopping: amazon, flipkart, meesho, online order, delivered, shipping, courier, myntra
   - vehicle: petrol, diesel, car wash, service, vehicle, car, bike, puncture, tyre, parking, fuel, auto, taxi, uber, ola
   - medical: doctor, hospital, pharmacy, medicine, physiotherapy, massage, spa, scan, xray, lab test, clinic, health
@@ -220,28 +223,76 @@ Examples:
 }`,
 
   reminder: `You are managing payment reminders and schedules.
-Focus on extracting:
-- What to remind about
-- When to remind (date/time)
-- Amount if specified
-- Recurring pattern if any
-- Priority/importance
+  Focus on extracting:
+  - What to remind about (preserve the EXACT text after "remind me to" or similar phrases)
+  - When to remind (date/time)
+  - Amount if specified
+  - Recurring pattern if any
+  - Priority/importance
+  - Category for classification only
 
-Examples:
-"remind me to pay electricity bill next Friday"
--> {
-  title: "Pay electricity bill",
-  due_date: "next Friday",
-  type: "bill_payment"
-}
+  Rules:
+  1. For the title, preserve the EXACT text after removing "remind me to", "remind me", "reminder", etc.
+  2. Only format the title if it's about a service provider (maid, driver, etc.)
+  3. For bills, keep the specific bill name (e.g. "phone bill", "electricity bill")
+  4. Use category only for classification, not in the title
+  5. NEVER modify or format the original text unless it's a service provider
 
-"set monthly reminder for maid payment two thousand"
--> {
-  title: "Maid payment",
-  amount: 2000,
-  recurring: true,
-  frequency: "monthly"
-}`,
+  Response format:
+  {
+    "reminder": {
+      "title": string,  // The EXACT text after removing trigger phrases
+      "description": string,  // Optional formatted description
+      "due_date": string,
+      "type": "bill_payment" | "service_payment" | "appointment" | "other",
+      "category": string,  // For classification only
+      "amount": number | null,
+      "recurring": boolean,
+      "frequency": "daily" | "weekly" | "monthly" | null
+    }
+  }
+
+  Examples:
+  User: "remind me to pay the phone bill tomorrow"
+  Response: {
+    "reminder": {
+      "title": "pay the phone bill",  // Exact text preserved
+      "description": "Phone bill payment",  // Optional formatted version
+      "due_date": "tomorrow",
+      "type": "bill_payment",
+      "category": "utilities",
+      "amount": null,
+      "recurring": false,
+      "frequency": null
+    }
+  }
+
+  User: "remind me to pay electricity bill next Friday"
+  Response: {
+    "reminder": {
+      "title": "pay electricity bill",  // Exact text preserved
+      "description": "Electricity bill payment",
+      "due_date": "next Friday",
+      "type": "bill_payment",
+      "category": "utilities",
+      "amount": null,
+      "recurring": false,
+      "frequency": null
+    }
+  }
+
+  User: "set monthly reminder for maid payment two thousand"
+  Response: {
+    "reminder": {
+      "title": "Pay maid",
+      "description": "Monthly maid payment",
+      "amount": 2000,
+      "recurring": true,
+      "frequency": "monthly",
+      "type": "service_payment",
+      "category": "logbook"
+    }
+  }`,
 
   query: `You are helping seniors understand their finances.
 Focus on:

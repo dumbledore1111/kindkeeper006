@@ -7,7 +7,7 @@ if (typeof window !== 'undefined') {
 import OpenAI from 'openai'
 import { supabase } from './supabase'
 import { processInput } from './transaction-processor'
-import { parseDateFromText } from './date-parser'
+import { DateParser } from '@/lib/date-parser'
 import type { 
   Transaction, 
   EventRelationship,
@@ -239,7 +239,7 @@ export async function processChatCompletion(inputMessage: string, context?: Stru
           amount: result.understood.amount,
           type: result.understood.type,
           description: result.understood.text,
-          date: parseDateFromText(result.understood.date)
+          date: DateParser.parseDate(result.understood.date)
         } : undefined,
         needs_clarification: result.needs_clarification
       }

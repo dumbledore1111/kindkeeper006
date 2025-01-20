@@ -15,7 +15,7 @@ import type { ContextLog } from '@/types/database'
 import { useAuth } from '@/hooks/useAuth'
 
 interface Message {
-  type: 'text' | 'image'
+  type: 'text' | 'image' | 'reminder'
   content: string
   isUser: boolean
   status: 'sending' | 'sent' | 'error'
@@ -109,6 +109,17 @@ export function ChatPanel({
       status: 'sent',
       needsConfirmation: false
     }]);
+
+    // If this is a reminder response, add the confirmation message
+    if (text.toLowerCase().includes('remind you')) {
+      setMessages(prev => [...prev, {
+        type: 'reminder',
+        content: '✓ Reminder set',
+        isUser: false,
+        status: 'sent',
+        needsConfirmation: false
+      }]);
+    }
 
     if (settings.voiceType !== 'none') {
       await speak(text);
@@ -472,12 +483,21 @@ export function ChatPanel({
               >
                 <div 
                     className={`rounded-lg px-4 py-2 max-w-[80%] ${
-                      message.isUser 
-                        ? 'bg-[#ffb380] text-gray-900 shadow-md'
-                        : 'bg-[#f3f4f6] text-gray-900 shadow-sm'
+                      message.type === 'reminder' 
+                        ? 'bg-green-500 text-white shadow-md'
+                        : message.isUser 
+                          ? 'bg-[#ffb380] text-gray-900 shadow-md'
+                          : 'bg-[#f3f4f6] text-gray-900 shadow-sm'
                     }`}
                   >
-                    {index === 0 ? "tell me i am listening" : message.content}
+                    {message.type === 'reminder' ? (
+                      <div className="flex items-center gap-2">
+                        <Check className="w-4 h-4" />
+                        {message.content}
+                      </div>
+                    ) : (
+                      index === 0 ? "tell me i am listening" : message.content
+                    )}
                     <MessageStatus status={message.status} />
                 </div>
               </div>

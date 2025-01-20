@@ -225,64 +225,42 @@ export class IntentDetector {
   }
 
   // Parse wage information from user input
-  parseWageInfo(input: string): WageInfo | null {
-    // Match patterns like "500 rupees daily", "1200 per hour", etc.
-    const amountMatch = input.match(/(\d+)\s*(rupees?|rs\.?|₹)?/i);
-    const frequencyMatch = input.match(/per\s*(hour|day|week|month)|daily|weekly|monthly|hourly/i);
-    
-    // Enhanced schedule matching
-    const numberWords: Record<string, number> = {
-      'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5,
-      'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10
-    };
-    
-    const scheduleMatch = input.match(/(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s*(?:times?|days?)\s*(?:a|per)\s*week/i);
-    const hoursMatch = input.match(/(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s*hours?/i);
-    
-    if (!amountMatch && !scheduleMatch && !hoursMatch) return null;
+  parseWageInfo(text: string): WageInfo | null {
+    const amount = this.extractAmount(text);
+    if (!amount) return null;
 
-    const wageInfo: WageInfo = {
-      amount: 0,
-      frequency: 'monthly',
-      schedule: {
-        visits_per_week: undefined,
-        hours_per_visit: undefined
-      }
-    };
-
-    // Parse amount
-    if (amountMatch) {
-      wageInfo.amount = parseInt(amountMatch[1]);
+    let frequency: 'hourly' | 'daily' | 'weekly' | 'monthly' = 'monthly';
+    
+    // Detect frequency with more variations
+    const lowercaseText = text.toLowerCase();
+    if (lowercaseText.match(/per\s+day|daily|a\s+day|\/day|each\s+day/)) {
+      frequency = 'daily';
+    } else if (lowercaseText.match(/per\s+week|weekly|a\s+week|\/week|each\s+week/)) {
+      frequency = 'weekly';
+    } else if (lowercaseText.match(/per\s+hour|hourly|an?\s+hour|\/hour|each\s+hour/)) {
+      frequency = 'hourly';
     }
 
-    // Parse frequency
-    if (frequencyMatch) {
-      const freq = frequencyMatch[0].toLowerCase();
-      if (freq.includes('hour')) wageInfo.frequency = 'hourly';
-      else if (freq.includes('day')) wageInfo.frequency = 'daily';
-      else if (freq.includes('week')) wageInfo.frequency = 'weekly';
-      else if (freq.includes('month')) wageInfo.frequency = 'monthly';
+    // Initialize schedule object
+    const schedule: { visits_per_week?: number; hours_per_visit?: number } = {};
+    
+    // Try to extract schedule information
+    const visitsMatch = text.match(/(\d+)\s*(?:time|visit|day)s?\s*(?:per|a|each)?\s*week/i);
+    if (visitsMatch) {
+      schedule.visits_per_week = parseInt(visitsMatch[1]);
     }
-
-    // Parse schedule
-    if (scheduleMatch) {
-      const visits = scheduleMatch[1].toLowerCase();
-      if (!wageInfo.schedule) {
-        wageInfo.schedule = {};
-      }
-      wageInfo.schedule.visits_per_week = numberWords[visits] || parseInt(visits);
-    }
-
+    
+    const hoursMatch = text.match(/(\d+)\s*hours?\s*(?:per|a|each)?\s*(?:visit|day|time)/i);
     if (hoursMatch) {
-      const hours = hoursMatch[1].toLowerCase();
-      if (!wageInfo.schedule) {
-        wageInfo.schedule = {};
-      }
-      wageInfo.schedule.hours_per_visit = numberWords[hours] || parseInt(hours);
+      schedule.hours_per_visit = parseInt(hoursMatch[1]);
     }
 
-    console.log('Parsed wage info:', wageInfo); // Debug log
-    return wageInfo;
+    // Return wage info
+    return {
+      amount,
+      frequency,
+      schedule
+    };
   }
 
   // Store incomplete attendance in cache
@@ -302,34 +280,37 @@ export class IntentDetector {
 
   // Update incomplete attendance with new information
   updateAttendance(userId: string, updates: Partial<IncompleteAttendance>) {
-    const current = attendanceCache.get(userId) || {
-      provider_type: 'maid' // Set default provider type for maid-related inputs
-    };
+    const current = attendanceCache.get(userId) || {};
+    console.log('Current attendance state:', current);
+    console.log('Updating with:', updates);
     
-    // If we're getting a name, ensure it's stored properly
-    if (updates.name) {
-      current.name = updates.name;
+    // If we're getting wage info, parse and store it properly
+    if (updates.wage_info) {
+      if (!current.wage_info) {
+        current.wage_info = updates.wage_info;
+      } else {
+        current.wage_info = {
+          ...current.wage_info,
+          ...updates.wage_info,
+          schedule: {
+            ...current.wage_info.schedule,
+            ...updates.wage_info.schedule
+          }
+        };
+      }
     }
     
-    const updated = { ...current, ...updates };
+    // If we're getting a name or provider type, update those
+    if (updates.name) current.name = updates.name;
+    if (updates.provider_type) current.provider_type = updates.provider_type;
+    if (updates.status) current.status = updates.status;
+    if (updates.date) current.date = updates.date;
     
-    // If wage info is being updated, merge it properly
-    if (updates.wage_info && current.wage_info) {
-      updated.wage_info = {
-        ...current.wage_info,
-        ...updates.wage_info,
-        schedule: {
-          ...current.wage_info.schedule,
-          ...updates.wage_info.schedule
-        }
-      };
-    } else if (updates.wage_info) {
-      // If no existing wage info, just use the updates
-      updated.wage_info = updates.wage_info;
-    }
-    
+    const updated = { ...current };
     attendanceCache.set(userId, updated);
-    console.log('Updated attendance cache:', updated); // Debug log
+    console.log('Updated attendance cache:', updated);
+    
+    return this.isAttendanceComplete(updated);
   }
 
   // Generate clarification question based on missing fields
@@ -456,7 +437,7 @@ export class IntentDetector {
     // Common expense categories
     const categories: Record<string, string[]> = {
       'groceries': ['groceries', 'grocery', 'vegetables', 'fruits', 'food items'],
-      'utilities': ['electricity', 'water', 'gas', 'utility', 'bill'],
+      'utilities': ['electricity', 'water', 'gas', 'utility', 'bill', 'phone bill', 'mobile', 'internet', 'wifi', 'broadband', 'cable', 'dish'],
       'transportation': ['auto', 'taxi', 'uber', 'ola', 'petrol', 'diesel', 'fuel'],
       'household': ['maid', 'cleaning', 'repair', 'maintenance'],
       'medical': ['medicine', 'doctor', 'hospital', 'medical'],
@@ -472,5 +453,32 @@ export class IntentDetector {
 
     // Default to miscellaneous if no category matches
     return 'miscellaneous';
+  }
+
+  // Parse schedule information from user input
+  parseScheduleInfo(input: string): { visits_per_week?: number; hours_per_visit?: number } | null {
+    const numberWords: Record<string, number> = {
+      'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5,
+      'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10
+    };
+    
+    const scheduleMatch = input.match(/(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s*(?:times?|days?)\s*(?:a|per)\s*week/i);
+    const hoursMatch = input.match(/(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s*hours?/i);
+    
+    if (!scheduleMatch && !hoursMatch) return null;
+
+    const schedule: { visits_per_week?: number; hours_per_visit?: number } = {};
+    
+    if (scheduleMatch) {
+      const visits = scheduleMatch[1].toLowerCase();
+      schedule.visits_per_week = numberWords[visits] || parseInt(visits);
+    }
+
+    if (hoursMatch) {
+      const hours = hoursMatch[1].toLowerCase();
+      schedule.hours_per_visit = numberWords[hours] || parseInt(hours);
+    }
+
+    return schedule;
   }
 } 

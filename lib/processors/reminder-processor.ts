@@ -5,7 +5,7 @@ import type {
   DatabaseOperation 
 } from '@/types/responses';
 import { supabase } from '@/lib/supabase';
-import { parseDateFromText } from '@/lib/date-parser';
+import { DateParser } from '../date-parser';
 
 export class ReminderProcessor {
   constructor(private userId: string) {}
@@ -45,7 +45,7 @@ export class ReminderProcessor {
         };
       }
 
-      const parsedDate = parseDateFromText(aiResponse.due_date);
+      const parsedDate = DateParser.parseDate(aiResponse.due_date);
       
       const dbOperations: DatabaseOperation[] = [{
         table: 'reminders',
@@ -65,7 +65,7 @@ export class ReminderProcessor {
       }];
 
       // Format response based on reminder type
-      let response = `I'll remind you about ${aiResponse.title} on ${parsedDate.toLocaleDateString('en-IN')}`;
+      let response = `Sure, I'll remind you to ${aiResponse.title} on ${DateParser.formatDate(parsedDate)}`;
       if (aiResponse.recurring) {
         response += ` and every ${aiResponse.frequency || 'month'}`;
       }

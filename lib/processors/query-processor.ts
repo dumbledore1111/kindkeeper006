@@ -7,7 +7,8 @@ import type {
   ProcessingResult, 
   Context,
   TransactionResponse,
-  QueryType 
+  QueryType,
+  AIResponse 
 } from '@/types/responses';
 import type { CategoryType } from '@/types/database';
 import { ContextEngine } from '../context-engine';
@@ -35,7 +36,7 @@ Output: {
 export class QueryProcessor {
   constructor(private userId: string, private contextEngine?: ContextEngine) {}
 
-  // Main entry point - handles both text and structured queries
+  // Main process method that other classes will use
   async process(
     input: string | QueryResponse, 
     context?: Context
@@ -112,7 +113,7 @@ export class QueryProcessor {
         const aiResponse = await processAssistantMessage(this.userId, query);
         return {
           success: true,
-          response: aiResponse,
+          response: typeof aiResponse === 'string' ? aiResponse : (aiResponse as AIResponse).suggestedResponse || 'No response available',
           context: {
             userId: this.userId,
             currentIntent: {
@@ -139,7 +140,7 @@ export class QueryProcessor {
       // Handle structured complex query
       const timePeriod = query?.time_period || 'this month';
       const timeRange = this.parseTimeRange(timePeriod);
-      const [expensesResult, incomeResult, balanceResult] = await Promise.all([
+      const [expenses, income, balance] = await Promise.all([
         this.getExpenses(timeRange.start, timeRange.end),
         this.getIncome(timeRange.start, timeRange.end),
         this.getBalance(timeRange.start, timeRange.end)
@@ -149,15 +150,6 @@ export class QueryProcessor {
         balance: number;
         transactions: TransactionResponse[];
       }];
-
-      const expenses = expensesResult || [];
-      const income = incomeResult || [];
-      const balance = balanceResult || {
-        income: 0,
-        expenses: 0,
-        balance: 0,
-        transactions: []
-      };
 
       const defaultContext: Context = {
         userId: this.userId,
@@ -541,12 +533,15 @@ export class QueryProcessor {
   }
 
   async processAnalyticsQuery(query: QueryResponse): Promise<AnalyticsResult> {
-    const timeRange = this.parseTimeRange(query.time_period);
+    if (!this.contextEngine) {
+      throw new Error('Context engine is required for analytics queries');
+    }
 
+    const timeRange = this.parseTimeRange(query.time_period);
     const spendingAnalysis = await this.contextEngine.getSpendingAnalytics(timeRange);
 
     let serviceProviderAnalysis;
-    if (query.provider?.type) {
+    if (query.provider?.type && this.contextEngine) {
       serviceProviderAnalysis = await this.contextEngine.getServiceProviderAnalytics(
         query.provider.type
       );
@@ -733,5 +728,12 @@ Balance: ${formatAmount(data.balance.balance)}
 
 Recent Transactions:
 ${transactions}`;
+  }
+
+  async processQuery(
+    input: string | QueryResponse, 
+    context?: Context
+  ): Promise<ProcessingResult> {
+    return this.process(input, context);
   }
 }

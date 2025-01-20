@@ -197,56 +197,10 @@ export class AttendanceProcessor {
           currentAttendance.wage_info = wageInfo;
           attendanceCache.set(this.userId, currentAttendance);
           
-          // We have all information, proceed to save
-          const dbOperations: DatabaseOperation[] = [
-            {
-              table: 'attendance_logs',
-              operation: 'insert',
-              data: {
-                user_id: this.userId,
-                provider_type: currentAttendance.provider_type,
-                name: currentAttendance.name,
-                status: currentAttendance.status,
-                date: currentAttendance.date
-              }
-            },
-            {
-              table: 'service_provider_wages',
-              operation: 'insert',
-              data: {
-                user_id: this.userId,
-                provider_type: currentAttendance.provider_type,
-                name: currentAttendance.name,
-                wage_amount: wageInfo.amount,
-                wage_frequency: wageInfo.frequency,
-                visits_per_week: wageInfo.schedule?.visits_per_week,
-                hours_per_visit: wageInfo.schedule?.hours_per_visit,
-                updated_at: new Date().toISOString()
-              }
-            }
-          ];
-
-          // Clear the cache after successful processing
-          attendanceCache.delete(this.userId);
-
-          const frequencyText = {
-            hourly: 'per hour',
-            daily: 'per day',
-            weekly: 'per week',
-            monthly: 'per month'
-          };
-
-          const scheduleText = wageInfo.schedule?.visits_per_week 
-            ? ` (${wageInfo.schedule.visits_per_week} times a week${
-                wageInfo.schedule.hours_per_visit 
-                  ? `, ${wageInfo.schedule.hours_per_visit} hours per visit`
-                  : ''
-              })`
-            : '';
-
+          // Ask for schedule info
           return {
-            success: true,
-            response: `Got it! ${currentAttendance.name} is ${currentAttendance.status} today. Wage set to ₹${wageInfo.amount} ${frequencyText[wageInfo.frequency]}${scheduleText}.`,
+            success: false,
+            response: `How many days a week does ${currentAttendance.name} work?`,
             context: {
               userId: this.userId,
               currentIntent: {
@@ -262,10 +216,13 @@ export class AttendanceProcessor {
               timeContext: {
                 referenceDate: new Date()
               },
-              currentAttendance: undefined
+              currentAttendance
             },
-            intent: 'attendance',
-            dbOperations
+            needsMoreInfo: {
+              type: 'schedule',
+              context: 'Need schedule information'
+            },
+            intent: 'attendance'
           };
         } else {
           return {
@@ -295,6 +252,123 @@ export class AttendanceProcessor {
             intent: 'attendance'
           };
         }
+      }
+
+      // Step 3: Check for schedule info
+      if (currentAttendance.wage_info && (!currentAttendance.wage_info.schedule?.visits_per_week || !currentAttendance.wage_info.schedule?.hours_per_visit)) {
+        const scheduleInfo = this.intentDetector.parseScheduleInfo(inputStr);
+        if (scheduleInfo) {
+          if (!currentAttendance.wage_info.schedule) {
+            currentAttendance.wage_info.schedule = {};
+          }
+          
+          if (!currentAttendance.wage_info.schedule.visits_per_week && scheduleInfo.visits_per_week) {
+            currentAttendance.wage_info.schedule.visits_per_week = scheduleInfo.visits_per_week;
+            attendanceCache.set(this.userId, currentAttendance);
+            
+            return {
+              success: false,
+              response: `How many hours per visit?`,
+              context: {
+                userId: this.userId,
+                currentIntent: {
+                  type: 'attendance',
+                  confidence: 0.8,
+                  relatedEvents: []
+                },
+                lastIntent: 'attendance',
+                history: context?.history || [],
+                recentEvents: [],
+                relatedContexts: [],
+                relatedEvents: [],
+                timeContext: {
+                  referenceDate: new Date()
+                },
+                currentAttendance
+              },
+              needsMoreInfo: {
+                type: 'schedule',
+                context: 'Need hours per visit'
+              },
+              intent: 'attendance'
+            };
+          }
+          
+          if (!currentAttendance.wage_info.schedule.hours_per_visit && scheduleInfo.hours_per_visit) {
+            currentAttendance.wage_info.schedule.hours_per_visit = scheduleInfo.hours_per_visit;
+            attendanceCache.set(this.userId, currentAttendance);
+          }
+        }
+      }
+
+      // If we have all required information, save it
+      if (currentAttendance.wage_info && 
+          currentAttendance.wage_info.schedule?.visits_per_week && 
+          currentAttendance.wage_info.schedule?.hours_per_visit) {
+        
+        const dbOperations: DatabaseOperation[] = [
+          {
+            table: 'attendance_logs',
+            operation: 'insert',
+            data: {
+              user_id: this.userId,
+              provider_type: currentAttendance.provider_type,
+              name: currentAttendance.name,
+              status: currentAttendance.status,
+              date: currentAttendance.date
+            }
+          },
+          {
+            table: 'service_provider_wages',
+            operation: 'insert',
+            data: {
+              user_id: this.userId,
+              provider_type: currentAttendance.provider_type,
+              name: currentAttendance.name,
+              wage_amount: currentAttendance.wage_info.amount,
+              wage_frequency: currentAttendance.wage_info.frequency,
+              visits_per_week: currentAttendance.wage_info.schedule.visits_per_week,
+              hours_per_visit: currentAttendance.wage_info.schedule.hours_per_visit,
+              updated_at: new Date().toISOString()
+            }
+          }
+        ];
+
+        // Clear cache
+        attendanceCache.delete(this.userId);
+
+        const frequencyText = {
+          hourly: 'per hour',
+          daily: 'per day',
+          weekly: 'per week',
+          monthly: 'per month'
+        };
+
+        const scheduleText = ` (${currentAttendance.wage_info.schedule.visits_per_week} times a week, ${currentAttendance.wage_info.schedule.hours_per_visit} hours per visit)`;
+
+        return {
+          success: true,
+          response: `Got it! ${currentAttendance.name} is ${currentAttendance.status} today. Wage set to ₹${currentAttendance.wage_info.amount} ${frequencyText[currentAttendance.wage_info.frequency]}${scheduleText}.`,
+          context: {
+            userId: this.userId,
+            currentIntent: {
+              type: 'attendance',
+              confidence: 0.8,
+              relatedEvents: []
+            },
+            lastIntent: 'attendance',
+            history: context?.history || [],
+            recentEvents: [],
+            relatedContexts: [],
+            relatedEvents: [],
+            timeContext: {
+              referenceDate: new Date()
+            },
+            currentAttendance: undefined
+          },
+          intent: 'attendance',
+          dbOperations
+        };
       }
 
       // This should rarely be reached, as we handle all cases above

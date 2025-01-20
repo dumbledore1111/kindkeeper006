@@ -48,7 +48,7 @@ export class TransactionProcessor {
         data: {
           user_id: this.userId,
           amount: aiResponse.amount,
-          type: 'expense',
+          type: aiResponse.type || 'expense',
           description: aiResponse.description,
           category: aiResponse.category || 'miscellaneous',
           created_at: aiResponse.date || new Date().toISOString(),
@@ -60,9 +60,10 @@ export class TransactionProcessor {
       await this.executeOperations(dbOperations);
 
       // Format the response
-      const date = new Date(aiResponse.date || new Date()).toLocaleDateString('en-IN', {
+      const date = new Date(aiResponse.date || new Date()).toLocaleString('en-IN', {
+        day: 'numeric',
         month: 'long',
-        day: 'numeric'
+        year: 'numeric'
       });
 
       // Clear any cached transaction state
@@ -72,7 +73,7 @@ export class TransactionProcessor {
       // Return success response with cleared context
       return {
         success: true,
-        response: `Got it! Paid ₹${aiResponse.amount} for ${aiResponse.description} on ${date}. Anything else to add?`,
+        response: `Got it! ${aiResponse.type === 'income' ? 'Received' : 'Paid'} ₹${aiResponse.amount} for ${aiResponse.description} on ${date}.`,
         context: {
           userId: this.userId,
           currentIntent: {
