@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react'
 import { useSpeechSynthesis } from './useSpeechSynthesis'
+import { useSupabase } from '@/hooks/useSupabase'
 
 interface SpeechOptions {
   useElevenLabs?: boolean;
@@ -11,6 +12,7 @@ export function useSpeechOutput() {
   const [isSpeaking, setIsSpeaking] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const { speak: speakBrowser } = useSpeechSynthesis()
+  const { supabase, session } = useSupabase()
 
   const speak = useCallback(async (text: string, options: SpeechOptions = {}) => {
     try {
@@ -26,13 +28,14 @@ export function useSpeechOutput() {
         text.includes('reminder') ||                // Reminders
         text.includes('question');                  // Questions
 
-      if (shouldUseElevenLabs) {
+      // If we should use ElevenLabs and have a session, try it
+      if (shouldUseElevenLabs && session?.access_token) {
         try {
           const response = await fetch('/api/text-to-speech', {
             method: 'POST',
             headers: { 
               'Content-Type': 'application/json',
-              'Authorization': `Bearer ${localStorage.getItem('supabase.auth.token')}`
+              'Authorization': `Bearer ${session.access_token}`
             },
             body: JSON.stringify({
               text,
@@ -42,7 +45,8 @@ export function useSpeechOutput() {
           });
 
           if (!response.ok) {
-            throw new Error('ElevenLabs request failed');
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'ElevenLabs request failed');
           }
 
           const audioBuffer = await response.arrayBuffer();
@@ -51,28 +55,28 @@ export function useSpeechOutput() {
 
           audio.onended = () => setIsSpeaking(false);
           audio.onerror = () => {
-            // Fallback to browser TTS if ElevenLabs fails
-            console.warn('ElevenLabs failed, falling back to browser TTS');
+            console.warn('ElevenLabs audio playback failed, falling back to browser TTS');
             speakBrowser(text);
           };
 
           await audio.play();
+          return;
         } catch (err) {
-          // Fallback to browser TTS
           console.warn('ElevenLabs error, falling back to browser TTS:', err);
-          speakBrowser(text);
         }
-      } else {
-        // Use browser TTS for simple responses
-        speakBrowser(text);
       }
+
+      // Fallback to browser TTS
+      speakBrowser(text);
     } catch (err) {
       console.error('Speech output error:', err);
       setError(err instanceof Error ? err.message : 'Failed to speak');
+      // Always fallback to browser TTS on error
+      speakBrowser(text);
     } finally {
       setIsSpeaking(false);
     }
-  }, [speakBrowser]);
+  }, [speakBrowser, session]);
 
   const stop = useCallback(() => {
     window.speechSynthesis.cancel(); // Stop browser TTS

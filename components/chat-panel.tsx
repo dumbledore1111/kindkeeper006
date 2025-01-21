@@ -450,32 +450,38 @@ export function ChatPanel({
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="p-0 border-none bg-transparent">
+      <DialogContent 
+        className="max-w-[400px] h-[700px] bg-[#FFFBEB] rounded-3xl p-0 animate-slide-in"
+        aria-describedby="chat-panel-description"
+      >
+        <div id="chat-panel-description" className="sr-only">
+          Chat panel for interacting with your financial assistant
+        </div>
         <DialogTitle className="sr-only">Chat Assistant</DialogTitle>
         <div className="absolute inset-0 flex items-center justify-center">
-          <div className="w-[400px] h-[700px] rounded-3xl bg-white shadow-xl p-6 relative">
+          <div className="w-[400px] h-[700px] rounded-3xl bg-[#FFFBEB] shadow-xl p-6 relative">
             {/* Header - Bigger icons */}
             <div className="flex justify-between items-center mb-4">
-          <Button 
+              <Button 
                 variant="ghost" 
                 size="icon" 
-            onClick={onClose}
-                className="rounded-full hover:bg-gray-100 p-2"
-          >
-                <ArrowLeft className="h-12 w-12 text-gray-700" />
-          </Button>
-          <Button 
+                onClick={onClose}
+                className="rounded-full hover:bg-[#FFEDD5] p-2"
+              >
+                <ArrowLeft className="h-12 w-12 text-[#EA580C]" />
+              </Button>
+              <Button 
                 variant="ghost"
                 size="icon"
-            onClick={() => setShowPhotoOptions(true)}
-                className="rounded-full hover:bg-gray-100 p-2"
-          >
-                <Camera className="h-12 w-12 text-gray-700" />
-          </Button>
-        </div>
+                onClick={() => setShowPhotoOptions(true)}
+                className="rounded-full hover:bg-[#FFEDD5] p-2"
+              >
+                <Camera className="h-12 w-12 text-[#EA580C]" />
+              </Button>
+            </div>
 
             {/* Messages Area */}
-            <div className="flex-1 overflow-y-auto mb-4 h-[calc(100%-180px)]">
+            <div className="flex-1 overflow-y-auto mb-4 h-[calc(100%-180px)] [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:none]">
               {messages.map((message, index) => (
               <div
                 key={index}

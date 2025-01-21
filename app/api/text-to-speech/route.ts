@@ -7,7 +7,7 @@ import { Database } from '@/types/database'
 
 // Voice configuration constants
 const VOICE_CONFIG = {
-  INDIAN_VOICE_ID: '21m00Tcm4TlvDq8ikWAM',
+  INDIAN_VOICE_ID: '21m00Tcm4TlvDq8ikWAM', // Indian English voice
   DEFAULT_STABILITY: 0.7,
   DEFAULT_SIMILARITY: 0.7,
   RATE_LIMIT: 10
@@ -27,20 +27,25 @@ interface RequestBody {
 
 export async function POST(req: Request) {
   try {
-    // Check auth
-    const supabase = createRouteHandlerClient<Database>({ cookies })
-    const { data: { session } } = await supabase.auth.getSession()
-    
-    if (!session) {
+    // Check auth from header first
+    const authHeader = req.headers.get('authorization')
+    if (!authHeader?.startsWith('Bearer ')) {
       return NextResponse.json({ 
-        success: false,
+        success: false, 
         error: 'Not authenticated'
       }, { status: 401 })
     }
 
-    // Verify ElevenLabs API key
-    if (!process.env.ELEVENLABS_API_KEY) {
-      throw new Error('ElevenLabs API key not configured')
+    // Extract token and verify
+    const token = authHeader.split(' ')[1].trim()
+    const supabase = createRouteHandlerClient<Database>({ cookies })
+    const { data: { user }, error: verifyError } = await supabase.auth.getUser(token)
+
+    if (verifyError || !user) {
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Invalid token'
+      }, { status: 401 })
     }
 
     const { text, responseType = 'simple' } = await req.json() as RequestBody
@@ -48,8 +53,17 @@ export async function POST(req: Request) {
     // Voice settings based on response type
     const voiceSettings = getVoiceSettings(responseType)
 
+    // First verify the API key is configured
+    if (!process.env.ELEVENLABS_API_KEY) {
+      logger.error('ElevenLabs API key not configured')
+      return NextResponse.json({ 
+        success: false,
+        error: 'ElevenLabs API key not configured'
+      }, { status: 500 })
+    }
+
     const response = await fetch(
-      `https://api.elevenlabs.io/v1/text-to-speech/${VOICE_CONFIG.INDIAN_VOICE_ID}`,
+      `https://api.elevenlabs.io/v1/text-to-speech/${VOICE_CONFIG.INDIAN_VOICE_ID}/stream`,
       {
         method: 'POST',
         headers: {
@@ -60,15 +74,24 @@ export async function POST(req: Request) {
         body: JSON.stringify({
           text: prepareText(text),
           model_id: 'eleven_multilingual_v2',
-          voice_settings: voiceSettings
+          voice_settings: voiceSettings,
+          output_format: 'mp3_44100_128'
         }),
       }
     )
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}))
-      logger.error('ElevenLabs API error:', { status: response.status, error: errorData })
-      throw new Error(`ElevenLabs API error: ${response.status}`)
+      logger.error('ElevenLabs API error:', { 
+        status: response.status, 
+        error: errorData,
+        hasApiKey: !!process.env.ELEVENLABS_API_KEY
+      })
+      return NextResponse.json({ 
+        success: false,
+        error: `ElevenLabs API error: ${response.status}`,
+        details: errorData
+      }, { status: response.status })
     }
 
     const audioBuffer = await response.arrayBuffer()

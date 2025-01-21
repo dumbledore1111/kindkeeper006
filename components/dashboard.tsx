@@ -22,7 +22,7 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen w-full flex items-center justify-center bg-black">
       {/* Mobile container */}
-      <div className="w-[400px] h-[700px] rounded-3xl border border-gray-200 bg-white shadow-xl p-6 relative">
+      <div className="w-[400px] h-[700px] rounded-3xl border border-gray-200 bg-[#FFFBEB] shadow-xl p-6 relative">
         {/* Top bar */}
         <div className="flex justify-between items-center">
           <span className="text-orange-500 text-xl font-medium">kindkeeper</span>

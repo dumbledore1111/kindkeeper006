@@ -1,16 +1,15 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Sheet, SheetContent } from "@/components/ui/sheet"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useRouter } from 'next/navigation'
-import { Phone, Plus, Settings, Save, X, Edit, Trash2, ArrowLeft } from 'lucide-react'
+import { Plus, Settings, Save, Edit, Trash2, ArrowLeft } from 'lucide-react'
 import { Popover, PopoverTrigger } from "@/components/ui/popover"
 import { SettingsPopup, AppSettings } from './settings-popup'
 import { supabase } from '@/lib/supabase'
 import { Dialog, DialogContent } from "@/components/ui/dialog"
-import { Database } from '@/types/database'
+import { Phone } from 'lucide-react'
 
 interface EmergencyContact {
   id: string;
@@ -70,18 +69,21 @@ export function AccountPanel({ open, onClose, onSignOut }: AccountPanelProps) {
     account_number: ''
   })
   const [appSettings, setAppSettings] = useState<AppSettings>({
-    textSize: "medium",
+    textSize: 'medium',
     volume: 50,
-    currency: 'USD',
+    currency: 'INR',
     language: 'en',
-    voiceType: 'female',
-    theme: 'light' as const,
+    voiceType: 'default',
+    theme: 'light'
   })
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [user, setUser] = useState<UserProfile | null>(null)
 
   useEffect(() => {
-    document.documentElement.style.setProperty('--text-base-size', `${appSettings.textSize}px`)
-  }, [appSettings.textSize])
+    if (appSettings?.textSize) {
+      document.documentElement.style.setProperty('--text-base-size', `${appSettings.textSize}px`)
+    }
+  }, [appSettings?.textSize])
 
   useEffect(() => {
     async function loadUserData() {
@@ -304,301 +306,328 @@ export function AccountPanel({ open, onClose, onSignOut }: AccountPanelProps) {
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="p-0 border-none bg-transparent">
         <div className="absolute inset-0 flex items-center justify-center">
-          <div className="w-[400px] h-[700px] rounded-3xl bg-white shadow-xl p-6 relative">
-            {/* Header with Back and Sign Out */}
-            <div className="flex justify-between items-center mb-4">
-          <Button 
+          <div className="w-[400px] h-[700px] rounded-3xl bg-[#FFFBEB] shadow-xl relative animate-in slide-in-from-bottom-4">
+            {/* Header */}
+            <div className="flex justify-between items-center p-6">
+              <Button 
                 variant="ghost" 
-                size="icon" 
-            onClick={onClose}
-                className="rounded-full hover:bg-gray-100 p-2"
-          >
-                <ArrowLeft className="h-12 w-12 text-gray-700" />
-          </Button>
-          <Button 
-            onClick={handleLogout}
-                className="px-6 h-12 rounded-full bg-[#ff6b00] hover:bg-[#ff8533]
-                  text-white font-medium transition-all duration-300"
-          >
+                size="icon"
+                onClick={onClose}
+                className="rounded-full hover:bg-[#FFEDD5]"
+              >
+                <ArrowLeft className="h-6 w-6 text-[#EA580C]" />
+              </Button>
+              <Button
+                variant="ghost"
+                onClick={onSignOut}
+                className="rounded-full bg-orange-500 text-white hover:bg-orange-600 px-6"
+              >
                 Sign Out
-          </Button>
-        </div>
-
-            {/* Content Area */}
-            <div className="flex-1 overflow-y-auto h-[calc(100%-80px)]">
-        {/* Profile Info */}
-              <div className="p-6 bg-white mb-4 border-b border-gray-100">
-                <h2 className="text-2xl font-bold text-gray-900 mb-2">
-                  {user?.profile?.full_name || user?.user_metadata?.full_name || 'Loading...'}
-                </h2>
-                <p className="text-gray-600">
-                  {user?.profile?.email || user?.email || 'Loading...'}
-                </p>
-        </div>
-
-        {/* Phone Number */}
-        <div className="px-6 py-4">
-          <div className="flex justify-between items-center mb-2">
-                  <h3 className="text-lg font-semibold text-gray-900">Phone Number</h3>
-            {!isEditingPhone && !savedPhone && (
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                onClick={() => setIsEditingPhone(true)}
-                className="text-orange-500 hover:text-orange-600 hover:bg-gray-800"
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                Add
               </Button>
-            )}
-          </div>
-          
-          {isEditingPhone ? (
-            <div className="space-y-2">
-              <Input
-                type="tel"
-                placeholder="Enter phone number"
-                value={phoneNumber}
-                onChange={(e) => setPhoneNumber(e.target.value)}
-                      className="bg-gray-50 border-gray-200 text-gray-900"
-              />
-              <div className="flex gap-2">
-                <Button 
-                  onClick={handleSavePhone}
-                  className="bg-orange-500 hover:bg-orange-600 text-white"
-                >
-                  <Save className="h-4 w-4 mr-2" />
-                  Save
-                </Button>
-                <Button 
-                  variant="outline"
-                  onClick={() => setIsEditingPhone(false)}
-                  className="border-gray-700 text-gray-300 hover:bg-gray-800"
-                >
-                  Cancel
-                </Button>
-              </div>
             </div>
-          ) : (
-            <div className="flex justify-between items-center">
-                    <p className="text-gray-600">
-                {savedPhone || 'No phone number added'}
+
+            {/* Profile Info */}
+            <div className="p-6 bg-[#FFEDD5] border-b-2 border-[#F97316]">
+              <h2 className="text-2xl font-bold text-[#9A3412] mb-2">
+                {user?.profile?.full_name || user?.user_metadata?.full_name || 'Loading...'}
+              </h2>
+              <p className="text-[#9A3412]">
+                {user?.profile?.email || user?.email || 'Loading...'}
               </p>
-              {savedPhone && (
+            </div>
+
+            {/* Content Area with Scrolling */}
+            <div className="flex-1 h-[calc(100%-200px)] overflow-y-auto no-scrollbar">
+              {/* Phone Number */}
+              <div className="px-6 py-4">
+                <div className="flex justify-between items-center mb-2">
+                  <h3 className="text-lg font-bold text-[#EA580C]">Phone Number</h3>
+                  {!isEditingPhone && !savedPhone && (
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      onClick={() => setIsEditingPhone(true)}
+                      className="text-orange-500 hover:bg-orange-100"
+                    >
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add
+                    </Button>
+                  )}
+                </div>
+                {isEditingPhone ? (
+                  <div className="space-y-2">
+                    <Input
+                      value={phoneNumber}
+                      onChange={(e) => setPhoneNumber(e.target.value)}
+                      placeholder="Enter phone number"
+                      className="bg-white border-2 border-[#F97316] text-[#9A3412] placeholder:text-[#9A3412]/50"
+                    />
+                    <div className="flex gap-2">
+                      <Button 
+                        onClick={handleSavePhone}
+                        className="bg-orange-500 hover:bg-orange-600 text-white"
+                      >
+                        <Save className="h-4 w-4 mr-2" />
+                        Save
+                      </Button>
+                      <Button 
+                        variant="outline"
+                        onClick={() => {
+                          setIsEditingPhone(false)
+                          setPhoneNumber(savedPhone)
+                        }}
+                        className="border-[#EA580C] text-[#EA580C] hover:bg-[#FFEDD5]"
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  savedPhone && (
+                    <div className="flex justify-between items-center">
+                      <p className="text-[#9A3412]">{savedPhone}</p>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setIsEditingPhone(true)}
+                        className="text-[#EA580C] hover:bg-[#FFEDD5]"
+                      >
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  )
+                )}
+              </div>
+
+              {/* Action Buttons and Forms */}
+              <div className="px-6 py-4 space-y-4">
+                <div>
+                  <Button 
+                    onClick={() => setIsAddingEmergencyContact(!isAddingEmergencyContact)}
+                    className="w-full h-14 bg-orange-500 hover:bg-orange-600 text-white text-lg font-semibold rounded-xl"
+                  >
+                    Add Emergency Contact
+                  </Button>
+                  
+                  {/* Emergency Contact Form */}
+                  {isAddingEmergencyContact && (
+                    <div className="mt-4 p-4 bg-[#FFEDD5] rounded-xl border-2 border-[#F97316]">
+                      <div className="space-y-3">
+                        <Input
+                          placeholder="Name"
+                          value={newEmergencyContact.name}
+                          onChange={(e) => setNewEmergencyContact({...newEmergencyContact, name: e.target.value})}
+                          className="bg-white border-2 border-[#F97316] text-[#9A3412] placeholder:text-[#9A3412]/50"
+                        />
+                        <Input
+                          placeholder="Relationship"
+                          value={newEmergencyContact.relationship}
+                          onChange={(e) => setNewEmergencyContact({...newEmergencyContact, relationship: e.target.value})}
+                          className="bg-white border-2 border-[#F97316] text-[#9A3412] placeholder:text-[#9A3412]/50"
+                        />
+                        <Input
+                          placeholder="Phone Number"
+                          value={newEmergencyContact.phoneNumber}
+                          onChange={(e) => setNewEmergencyContact({...newEmergencyContact, phoneNumber: e.target.value})}
+                          className="bg-white border-2 border-[#F97316] text-[#9A3412] placeholder:text-[#9A3412]/50"
+                        />
+                        <div className="flex gap-2">
+                          <Button 
+                            onClick={editingEmergencyContactId ? handleUpdateEmergencyContact : handleAddEmergencyContact}
+                            className="flex-1 bg-orange-500 hover:bg-orange-600 text-white"
+                          >
+                            <Save className="h-4 w-4 mr-2" />
+                            {editingEmergencyContactId ? 'Update' : 'Add'} Contact
+                          </Button>
+                          <Button 
+                            variant="outline"
+                            onClick={() => {
+                              setIsAddingEmergencyContact(false)
+                              setEditingEmergencyContactId(null)
+                              setNewEmergencyContact({ name: '', relationship: '', phoneNumber: '' })
+                            }}
+                            className="border-[#EA580C] text-[#EA580C] hover:bg-[#FFEDD5]"
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <Button 
+                    onClick={() => setIsAddingBankAccount(!isAddingBankAccount)}
+                    className="w-full h-14 bg-orange-500 hover:bg-orange-600 text-white text-lg font-semibold rounded-xl"
+                  >
+                    Add Bank Account
+                  </Button>
+
+                  {/* Bank Account Form */}
+                  {isAddingBankAccount && (
+                    <div className="mt-4 p-4 bg-[#FFEDD5] rounded-xl border-2 border-[#F97316]">
+                      <div className="space-y-3">
+                        <Input
+                          placeholder="Bank Name"
+                          value={newBankAccount.bank_name}
+                          onChange={(e) => setNewBankAccount({...newBankAccount, bank_name: e.target.value})}
+                          className="bg-white border-2 border-[#F97316] text-[#9A3412] placeholder:text-[#9A3412]/50"
+                        />
+                        <Input
+                          placeholder="Account Type"
+                          value={newBankAccount.account_type}
+                          onChange={(e) => setNewBankAccount({...newBankAccount, account_type: e.target.value})}
+                          className="bg-white border-2 border-[#F97316] text-[#9A3412] placeholder:text-[#9A3412]/50"
+                        />
+                        <Input
+                          placeholder="Account Number"
+                          value={newBankAccount.account_number}
+                          onChange={(e) => setNewBankAccount({...newBankAccount, account_number: e.target.value})}
+                          className="bg-white border-2 border-[#F97316] text-[#9A3412] placeholder:text-[#9A3412]/50"
+                        />
+                        <div className="flex gap-2">
+                          <Button 
+                            onClick={editingBankAccountId ? handleUpdateBankAccount : handleAddBankAccount}
+                            className="flex-1 bg-orange-500 hover:bg-orange-600 text-white"
+                          >
+                            <Save className="h-4 w-4 mr-2" />
+                            {editingBankAccountId ? 'Update' : 'Add'} Account
+                          </Button>
+                          <Button 
+                            variant="outline"
+                            onClick={() => {
+                              setIsAddingBankAccount(false)
+                              setEditingBankAccountId(null)
+                              setNewBankAccount({ bank_name: '', account_type: '', account_number: '' })
+                            }}
+                            className="border-[#EA580C] text-[#EA580C] hover:bg-[#FFEDD5]"
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 <Button 
-                  variant="ghost" 
-                  size="sm" 
-                  onClick={() => setIsEditingPhone(true)}
-                  className="text-orange-500 hover:text-orange-600 hover:bg-gray-800"
+                  onClick={() => setIsSettingsOpen(true)}
+                  className="w-full h-14 bg-orange-500 hover:bg-orange-600 text-white text-lg font-semibold rounded-xl"
                 >
-                  Edit
+                  <Settings className="h-5 w-5 mr-2" />
+                  Settings
                 </Button>
+
+                {/* Settings Dialog */}
+                <SettingsPopup
+                  initialSettings={appSettings}
+                  open={isSettingsOpen}
+                  onOpenChange={setIsSettingsOpen}
+                  onSettingsChange={(newSettings) => {
+                    setAppSettings(newSettings)
+                    const saveSettings = async () => {
+                      const { data: { session } } = await supabase.auth.getSession()
+                      if (session?.user) {
+                        await supabase
+                          .from('user_settings')
+                          .upsert({
+                            user_id: session.user.id,
+                            ...newSettings,
+                            updated_at: new Date().toISOString()
+                          })
+                      }
+                    }
+                    saveSettings()
+                  }}
+                />
+              </div>
+
+              {/* Emergency Contacts List */}
+              {emergencyContacts.length > 0 && (
+                <div className="px-6 py-4">
+                  <h3 className="text-lg font-bold text-[#EA580C] mb-4">Emergency Contacts</h3>
+                  <div className="space-y-3">
+                    {emergencyContacts.map((contact) => (
+                      <div 
+                        key={contact.id} 
+                        className="p-4 bg-[#FFEDD5] rounded-xl border-2 border-[#F97316] group hover:shadow-md transition-shadow"
+                      >
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <p className="font-bold text-[#9A3412] group-hover:text-[#EA580C] transition-colors">
+                              {contact.name}
+                            </p>
+                            <p className="text-sm text-[#9A3412]">{contact.relationship}</p>
+                            <p className="text-sm text-[#9A3412]">{contact.phoneNumber}</p>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleEditEmergencyContact(contact)}
+                              className="rounded-full hover:bg-[#FEF3C7] text-[#EA580C]"
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleDeleteEmergencyContact(contact.id)}
+                              className="rounded-full hover:bg-[#FEF3C7] text-[#DC2626]"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               )}
-            </div>
-          )}
-        </div>
 
-        {/* Emergency Contacts */}
-        <div className="px-6 py-4 border-t border-gray-800">
-                <h3 className="text-lg font-semibold text-white mb-4">Emergency Contacts</h3>
-          {emergencyContacts.map((contact) => (
-                  <div key={contact.id} className="mb-4 p-3 bg-gray-50 rounded-lg flex justify-between items-start">
-              <div>
-                      <p className="font-medium text-gray-900">{contact.name}</p>
-                      <p className="text-sm text-gray-600">{contact.relationship}</p>
-                      <p className="text-sm text-gray-600">{contact.phoneNumber}</p>
-              </div>
-              <div className="flex gap-2">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => handleEditEmergencyContact(contact)}
-                  className="text-orange-500 hover:text-orange-600 hover:bg-gray-700"
-                >
-                  <Edit className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => handleDeleteEmergencyContact(contact.id)}
-                  className="text-red-500 hover:text-red-600 hover:bg-gray-700"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          ))}
-          {isAddingEmergencyContact ? (
-            <div className="space-y-2 mb-4">
-              <Input
-                placeholder="Name"
-                value={newEmergencyContact.name}
-                onChange={(e) => setNewEmergencyContact({...newEmergencyContact, name: e.target.value})}
-                      className="bg-gray-50 border-gray-200 text-gray-900"
-              />
-              <Input
-                placeholder="Relationship"
-                value={newEmergencyContact.relationship}
-                onChange={(e) => setNewEmergencyContact({...newEmergencyContact, relationship: e.target.value})}
-                      className="bg-gray-50 border-gray-200 text-gray-900"
-              />
-              <Input
-                placeholder="Phone Number"
-                value={newEmergencyContact.phoneNumber}
-                onChange={(e) => setNewEmergencyContact({...newEmergencyContact, phoneNumber: e.target.value})}
-                      className="bg-gray-50 border-gray-200 text-gray-900"
-              />
-              <div className="flex gap-2">
-                <Button 
-                  onClick={editingEmergencyContactId ? handleUpdateEmergencyContact : handleAddEmergencyContact}
-                  className="bg-orange-500 hover:bg-orange-600 text-white"
-                >
-                  <Save className="h-4 w-4 mr-2" />
-                  {editingEmergencyContactId ? 'Update' : 'Add'} Contact
-                </Button>
-                <Button 
-                  variant="outline"
-                  onClick={() => {
-                    setIsAddingEmergencyContact(false)
-                    setEditingEmergencyContactId(null)
-                    setNewEmergencyContact({ name: '', relationship: '', phoneNumber: '' })
-                  }}
-                  className="border-gray-700 text-gray-300 hover:bg-gray-800"
-                >
-                  Cancel
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <Button 
-              onClick={() => setIsAddingEmergencyContact(true)}
-              className="w-full bg-orange-500 hover:bg-orange-600 text-white"
-            >
-              Add Emergency Contact
-            </Button>
-          )}
-        </div>
-
-        {/* Bank Accounts */}
-        <div className="px-6 py-4 border-t border-gray-800">
-                <h3 className="text-lg font-semibold text-white mb-4">Bank Accounts</h3>
-          {bankAccounts.map((account) => (
-                  <div key={account.id} className="mb-4 p-3 bg-gray-50 rounded-lg flex justify-between items-start">
-              <div>
-                      <p className="font-medium text-gray-900">
-                        {account.bank_name}
-                      </p>
-                      <p className="text-sm text-gray-600">
-                        {account.account_type}
-                      </p>
-                      <p className="text-sm text-gray-600">
-                        ****{account.account_number?.slice(-4)}
-                      </p>
-              </div>
-              <div className="flex gap-2">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => handleEditBankAccount(account)}
-                  className="text-orange-500 hover:text-orange-600 hover:bg-gray-700"
-                >
-                  <Edit className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => handleDeleteBankAccount(account.id)}
-                  className="text-red-500 hover:text-red-600 hover:bg-gray-700"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          ))}
-          {isAddingBankAccount ? (
-            <div className="space-y-2 mb-4">
-              <Input
-                placeholder="Bank Name"
-                      value={newBankAccount.bank_name}
-                      onChange={(e) => setNewBankAccount({...newBankAccount, bank_name: e.target.value})}
-                      className="bg-gray-50 border-gray-200 text-gray-900"
-              />
-              <Input
-                placeholder="Account Type"
-                      value={newBankAccount.account_type}
-                      onChange={(e) => setNewBankAccount({...newBankAccount, account_type: e.target.value})}
-                      className="bg-gray-50 border-gray-200 text-gray-900"
-              />
-              <Input
-                placeholder="Account Number"
-                      value={newBankAccount.account_number}
-                      onChange={(e) => setNewBankAccount({...newBankAccount, account_number: e.target.value})}
-                      className="bg-gray-50 border-gray-200 text-gray-900"
-              />
-              <div className="flex gap-2">
-                <Button 
-                  onClick={editingBankAccountId ? handleUpdateBankAccount : handleAddBankAccount}
-                  className="bg-orange-500 hover:bg-orange-600 text-white"
-                >
-                  <Save className="h-4 w-4 mr-2" />
-                  {editingBankAccountId ? 'Update' : 'Add'} Bank Account
-                </Button>
-                <Button 
-                  variant="outline"
-                  onClick={() => {
-                    setIsAddingBankAccount(false)
-                    setEditingBankAccountId(null)
-                          setNewBankAccount({ bank_name: '', account_type: '', account_number: '' })
-                  }}
-                  className="border-gray-700 text-gray-300 hover:bg-gray-800"
-                >
-                  Cancel
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <Button 
-              onClick={() => setIsAddingBankAccount(true)}
-              className="w-full bg-orange-500 hover:bg-orange-600 text-white"
-            >
-              Add Bank Account
-            </Button>
-          )}
-        </div>
-
-        {/* Settings */}
-        <div className="px-6 py-4 border-t border-gray-300">
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button 
-                className="w-full bg-orange-500 hover:bg-orange-600 text-white"
-              >
-                <Settings className="h-4 w-4 mr-2" />
-                Settings
-              </Button>
-            </PopoverTrigger>
-            <SettingsPopup
-              initialSettings={appSettings}
-              onSettingsChange={(newSettings) => {
-                setAppSettings(newSettings)
-                // Save to backend
-                const saveSettings = async () => {
-                  const { data: { session } } = await supabase.auth.getSession()
-                  if (session?.user) {
-                    await supabase
-                      .from('user_settings')
-                      .upsert({
-                        user_id: session.user.id,
-                        ...newSettings,
-                        updated_at: new Date().toISOString()
-                      })
-                  }
-                }
-                saveSettings()
-              }}
-            />
-          </Popover>
-        </div>
+              {/* Bank Accounts List */}
+              {bankAccounts.length > 0 && (
+                <div className="px-6 py-4">
+                  <h3 className="text-lg font-bold text-[#EA580C] mb-4">Bank Accounts</h3>
+                  <div className="space-y-3">
+                    {bankAccounts.map((account) => (
+                      <div 
+                        key={account.id} 
+                        className="p-4 bg-[#FFEDD5] rounded-xl border-2 border-[#F97316] group hover:shadow-md transition-shadow"
+                      >
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <p className="font-bold text-[#9A3412] group-hover:text-[#EA580C] transition-colors">
+                              {account.bank_name}
+                            </p>
+                            <p className="text-sm text-[#9A3412]">{account.account_type}</p>
+                            <p className="text-sm text-[#9A3412]">****{account.account_number?.slice(-4)}</p>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleEditBankAccount(account)}
+                              className="rounded-full hover:bg-[#FEF3C7] text-[#EA580C]"
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleDeleteBankAccount(account.id)}
+                              className="rounded-full hover:bg-[#FEF3C7] text-[#DC2626]"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { PopoverContent } from "@/components/ui/popover"
+import { useState } from 'react'
 import { Button } from "@/components/ui/button"
 import { Slider } from "@/components/ui/slider"
+import { Dialog, DialogContent } from "@/components/ui/dialog"
 import {
   Select,
   SelectContent,
@@ -12,6 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { ArrowLeft } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { logger } from '@/lib/logger'
 
@@ -27,9 +28,11 @@ export interface AppSettings {
 interface SettingsPopupProps {
   onSettingsChange: (settings: AppSettings) => void;
   initialSettings: AppSettings;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }
 
-export function SettingsPopup({ onSettingsChange, initialSettings }: SettingsPopupProps) {
+export function SettingsPopup({ onSettingsChange, initialSettings, open, onOpenChange }: SettingsPopupProps) {
   const [localSettings, setLocalSettings] = useState<AppSettings>(initialSettings)
 
   const handleThemeChange = async (theme: 'light' | 'dark') => {
@@ -66,6 +69,7 @@ export function SettingsPopup({ onSettingsChange, initialSettings }: SettingsPop
         }
 
         onSettingsChange(localSettings)
+        onOpenChange(false)
       }
     } catch (error) {
       logger.error('Failed to save settings:', error)
@@ -73,151 +77,167 @@ export function SettingsPopup({ onSettingsChange, initialSettings }: SettingsPop
   }
 
   return (
-    <PopoverContent className="w-[400px] transition-colors duration-300 dark:bg-dark-background bg-light-background">
-      <div className="space-y-4">
-        <div className="space-y-3">
-          <div className="space-y-1">
-            <label className="text-sm font-medium dark:text-white text-gray-700">
-              Currency
-            </label>
-            <Select
-              value={localSettings.currency}
-              onValueChange={(value) => handleSettingChange('currency', value)}
-            >
-              <SelectTrigger className={`w-full h-10 ${localSettings.theme === 'dark' ? 'bg-[#2a3447] text-white' : 'bg-gray-100 text-black'} border-none`}>
-                <SelectValue placeholder="Select currency" />
-              </SelectTrigger>
-              <SelectContent className={localSettings.theme === 'dark' ? 'bg-[#2a3447] border-none' : 'bg-white border-gray-200'}>
-                <SelectGroup>
-                  <SelectItem value="INR">Indian Rupee (₹)</SelectItem>
-                  <SelectItem value="USD">US Dollar ($)</SelectItem>
-                  <SelectItem value="EUR">Euro (€)</SelectItem>
-                  <SelectItem value="GBP">British Pound (£)</SelectItem>
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-1">
-            <label className="text-sm font-medium dark:text-white text-gray-700">
-              Language
-            </label>
-            <Select
-              value={localSettings.language}
-              onValueChange={(value) => handleSettingChange('language', value)}
-            >
-              <SelectTrigger className={`w-full h-10 ${localSettings.theme === 'dark' ? 'bg-[#2a3447] text-white' : 'bg-gray-100 text-black'} border-none`}>
-                <SelectValue placeholder="Select language" />
-              </SelectTrigger>
-              <SelectContent className={localSettings.theme === 'dark' ? 'bg-[#2a3447] border-none' : 'bg-white border-gray-200'}>
-                <SelectGroup>
-                  <SelectItem value="en">English</SelectItem>
-                  <SelectItem value="hi">हिंदी (Hindi)</SelectItem>
-                  <SelectItem value="ta">தமிழ் (Tamil)</SelectItem>
-                  <SelectItem value="ml">മലയാളം (Malayalam)</SelectItem>
-                  <SelectItem value="ar">العربية (Arabic)</SelectItem>
-                  <SelectItem value="fr">Français (French)</SelectItem>
-                  <SelectItem value="es">Español (Spanish)</SelectItem>
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-1">
-            <label className="text-sm font-medium dark:text-white text-gray-700">
-              Text Size
-            </label>
-            <div className="grid grid-cols-3 gap-2">
-              {(['small', 'medium', 'large'] as const).map((size) => (
-                <button
-                  key={size}
-                  onClick={() => handleSettingChange('textSize', size)}
-                  className={`
-                    h-10 rounded-md capitalize
-                    ${localSettings.textSize === size 
-                      ? 'bg-orange-500 text-white' 
-                      : localSettings.theme === 'dark'
-                        ? 'bg-[#2a3447] text-gray-200 hover:bg-[#3a4457]'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}
-                  `}
-                >
-                  {size}
-                </button>
-              ))}
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="p-0 border-none bg-transparent">
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="w-[400px] h-[700px] rounded-3xl bg-[#FFFBEB] shadow-xl relative animate-in slide-in-from-bottom-4">
+            <div className="flex justify-between items-center p-6">
+              <Button 
+                variant="ghost" 
+                size="icon"
+                onClick={() => onOpenChange(false)}
+                className="rounded-full hover:bg-[#FFEDD5]"
+              >
+                <ArrowLeft className="h-6 w-6 text-[#EA580C]" />
+              </Button>
+              <h2 className="text-2xl font-bold text-[#EA580C]">Settings</h2>
+              <div className="w-10" /> {/* Spacer for alignment */}
             </div>
-          </div>
+            <div className="p-6 space-y-4">
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <label className="text-sm font-medium text-[#9A3412]">
+                    Currency
+                  </label>
+                  <Select
+                    value={localSettings.currency}
+                    onValueChange={(value) => handleSettingChange('currency', value)}
+                  >
+                    <SelectTrigger className="w-full h-10 bg-white border-2 border-[#F97316] text-[#9A3412]">
+                      <SelectValue placeholder="Select currency" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-white border-[#F97316]">
+                      <SelectGroup>
+                        <SelectItem value="INR">Indian Rupee (₹)</SelectItem>
+                        <SelectItem value="USD">US Dollar ($)</SelectItem>
+                        <SelectItem value="EUR">Euro (€)</SelectItem>
+                        <SelectItem value="GBP">British Pound (£)</SelectItem>
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                </div>
 
-          <div className="space-y-1">
-            <label className="text-sm font-medium dark:text-white text-gray-700">
-              Voice Type
-            </label>
-            <Select
-              value={localSettings.voiceType}
-              onValueChange={(value) => handleSettingChange('voiceType', value)}
-            >
-              <SelectTrigger className={`w-full h-10 ${localSettings.theme === 'dark' ? 'bg-[#2a3447] text-white' : 'bg-gray-100 text-black'} border-none`}>
-                <SelectValue placeholder="Select voice type" />
-              </SelectTrigger>
-              <SelectContent className={localSettings.theme === 'dark' ? 'bg-[#2a3447] border-none' : 'bg-white border-gray-200'}>
-                <SelectGroup>
-                  <SelectItem value="default">Default</SelectItem>
-                  <SelectItem value="male">Male</SelectItem>
-                  <SelectItem value="female">Female</SelectItem>
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </div>
+                <div className="space-y-1">
+                  <label className="text-sm font-medium text-[#9A3412]">
+                    Language
+                  </label>
+                  <Select
+                    value={localSettings.language}
+                    onValueChange={(value) => handleSettingChange('language', value)}
+                  >
+                    <SelectTrigger className="w-full h-10 bg-white border-2 border-[#F97316] text-[#9A3412]">
+                      <SelectValue placeholder="Select language" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-white border-[#F97316]">
+                      <SelectGroup>
+                        <SelectItem value="en">English</SelectItem>
+                        <SelectItem value="hi">हिंदी (Hindi)</SelectItem>
+                        <SelectItem value="ta">தமிழ் (Tamil)</SelectItem>
+                        <SelectItem value="ml">മലയാളം (Malayalam)</SelectItem>
+                        <SelectItem value="ar">العربية (Arabic)</SelectItem>
+                        <SelectItem value="fr">Français (French)</SelectItem>
+                        <SelectItem value="es">Español (Spanish)</SelectItem>
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                </div>
 
-          <div className="space-y-1">
-            <label className="text-sm font-medium dark:text-white text-gray-700">
-              Volume
-            </label>
-            <div className="px-1">
-              <Slider
-                min={0}
-                max={100}
-                step={1}
-                value={[localSettings.volume]}
-                onValueChange={([value]) => handleSettingChange('volume', value)}
-                className="[&_[role=slider]]:bg-orange-500 [&_[role=slider]]:border-none"
-              />
-              <div className={`text-center text-sm ${localSettings.theme === 'dark' ? 'text-gray-400' : 'text-gray-600'} mt-1`}>
-                {localSettings.volume}%
+                <div className="space-y-1">
+                  <label className="text-sm font-medium text-[#9A3412]">
+                    Text Size
+                  </label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {(['small', 'medium', 'large'] as const).map((size) => (
+                      <button
+                        key={size}
+                        onClick={() => handleSettingChange('textSize', size)}
+                        className={`
+                          h-10 rounded-md capitalize
+                          ${localSettings.textSize === size 
+                            ? 'bg-[#EA580C] text-white' 
+                            : 'bg-white border-2 border-[#F97316] text-[#9A3412] hover:bg-[#FFEDD5]'}
+                        `}
+                      >
+                        {size}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-sm font-medium text-[#9A3412]">
+                    Voice Type
+                  </label>
+                  <Select
+                    value={localSettings.voiceType}
+                    onValueChange={(value) => handleSettingChange('voiceType', value)}
+                  >
+                    <SelectTrigger className="w-full h-10 bg-white border-2 border-[#F97316] text-[#9A3412]">
+                      <SelectValue placeholder="Select voice type" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-white border-[#F97316]">
+                      <SelectGroup>
+                        <SelectItem value="default">Default</SelectItem>
+                        <SelectItem value="male">Male</SelectItem>
+                        <SelectItem value="female">Female</SelectItem>
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-sm font-medium text-[#9A3412]">
+                    Volume
+                  </label>
+                  <div className="px-1">
+                    <Slider
+                      min={0}
+                      max={100}
+                      step={1}
+                      value={[localSettings.volume]}
+                      onValueChange={([value]) => handleSettingChange('volume', value)}
+                      className="[&_[role=slider]]:bg-[#EA580C] [&_[role=slider]]:border-none"
+                    />
+                    <div className="text-center text-sm text-[#9A3412] mt-1">
+                      {localSettings.volume}%
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-sm font-medium text-[#9A3412]">
+                    Color Theme
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {(['dark', 'light'] as const).map((theme) => (
+                      <button
+                        key={theme}
+                        onClick={() => handleThemeChange(theme)}
+                        className={`
+                          h-10 rounded-md capitalize transition-colors
+                          ${localSettings.theme === theme 
+                            ? 'bg-[#EA580C] text-white' 
+                            : 'bg-white border-2 border-[#F97316] text-[#9A3412] hover:bg-[#FFEDD5]'}
+                        `}
+                      >
+                        {theme}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
 
-          <div className="space-y-1">
-            <label className="text-sm font-medium dark:text-white text-gray-700">
-              Color Theme
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              {(['dark', 'light'] as const).map((theme) => (
-                <button
-                  key={theme}
-                  onClick={() => handleThemeChange(theme)}
-                  className={`
-                    h-10 rounded-md capitalize transition-colors
-                    ${localSettings.theme === theme 
-                      ? 'bg-orange-500 text-white' 
-                      : 'dark:bg-[#2a3447] dark:text-gray-200 dark:hover:bg-[#3a4457] bg-gray-100 text-gray-700 hover:bg-gray-200'}
-                  `}
-                >
-                  {theme}
-                </button>
-              ))}
+              <Button 
+                onClick={handleSave}
+                className="w-full h-14 bg-[#EA580C] hover:bg-[#C2410C] text-white text-lg font-semibold rounded-xl"
+              >
+                Save Settings
+              </Button>
             </div>
           </div>
         </div>
-
-        <Button 
-          onClick={handleSave}
-          className="w-full h-10 bg-orange-500 hover:bg-orange-600 text-white font-medium rounded-md"
-        >
-          Save Settings
-        </Button>
-      </div>
-    </PopoverContent>
+      </DialogContent>
+    </Dialog>
   )
 }
 

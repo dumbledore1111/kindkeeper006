@@ -80,3 +80,14 @@ body {
   animation: bounce-custom 5s cubic-bezier(0.28, 0.84, 0.42, 1) infinite;
 }
 
+@layer utilities {
+  .no-scrollbar {
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
+  }
+  
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;  /* Chrome, Safari and Opera */
+  }
+}
+
