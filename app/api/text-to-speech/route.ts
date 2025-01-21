@@ -1,9 +1,6 @@
 import { NextResponse } from 'next/server'
 import { logger } from '@/lib/logger'
 import { handleApiError } from '@/lib/error-handler'
-import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
-import { cookies } from 'next/headers'
-import { Database } from '@/types/database'
 
 // Voice configuration constants
 const VOICE_CONFIG = {
@@ -27,32 +24,6 @@ interface RequestBody {
 
 export async function POST(req: Request) {
   try {
-    // Check auth from header first
-    const authHeader = req.headers.get('authorization')
-    if (!authHeader?.startsWith('Bearer ')) {
-      return NextResponse.json({ 
-        success: false, 
-        error: 'Not authenticated'
-      }, { status: 401 })
-    }
-
-    // Extract token and verify
-    const token = authHeader.split(' ')[1].trim()
-    const supabase = createRouteHandlerClient<Database>({ cookies })
-    const { data: { user }, error: verifyError } = await supabase.auth.getUser(token)
-
-    if (verifyError || !user) {
-      return NextResponse.json({ 
-        success: false, 
-        error: 'Invalid token'
-      }, { status: 401 })
-    }
-
-    const { text, responseType = 'simple' } = await req.json() as RequestBody
-
-    // Voice settings based on response type
-    const voiceSettings = getVoiceSettings(responseType)
-
     // First verify the API key is configured
     if (!process.env.ELEVENLABS_API_KEY) {
       logger.error('ElevenLabs API key not configured')
@@ -61,6 +32,18 @@ export async function POST(req: Request) {
         error: 'ElevenLabs API key not configured'
       }, { status: 500 })
     }
+
+    const { text, responseType = 'simple' } = await req.json() as RequestBody
+
+    // Voice settings based on response type
+    const voiceSettings = getVoiceSettings(responseType)
+
+    console.log('Calling ElevenLabs API with:', {
+      voiceId: VOICE_CONFIG.INDIAN_VOICE_ID,
+      hasApiKey: !!process.env.ELEVENLABS_API_KEY,
+      text: text.substring(0, 50) + '...',
+      responseType
+    });
 
     const response = await fetch(
       `https://api.elevenlabs.io/v1/text-to-speech/${VOICE_CONFIG.INDIAN_VOICE_ID}/stream`,
