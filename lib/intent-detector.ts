@@ -322,7 +322,7 @@ export class IntentDetector {
     const fieldQuestions: Record<string, string> = {
       'provider_name': 'What is their name?',
       'service_provider.type': 'What type of service provider is this (e.g. maid, driver)?',
-      'wage_info': 'How much do we pay them and how often (daily/weekly/monthly)?',
+      'wage_info': 'them and how often (daily/weekly/monthly)?',
       'wage_amount': 'How much is their wage?',
       'wage_frequency': 'How often do we pay them (daily/weekly/monthly)?',
       'schedule': 'How many times per week do they come, and how many hours per visit?',

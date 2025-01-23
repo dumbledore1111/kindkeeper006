@@ -133,84 +133,84 @@ export function BookPanel({ open, onClose }: BookPanelProps) {
 
   return (
     <>
-      <Dialog open={open} onOpenChange={onClose}>
-        <DialogContent className="p-0 border-none bg-transparent">
-          <div className="absolute inset-0 flex items-center justify-center">
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="p-0 border-none bg-transparent">
+        <div className="absolute inset-0 flex items-center justify-center">
             <div className="w-[400px] h-[700px] rounded-3xl bg-[#FFFBEB] shadow-xl p-6 relative animate-in slide-in-from-bottom-4">
-              {/* Header */}
-              <div className="flex justify-between items-center mb-4">
-                <Button 
-                  variant="ghost" 
-                  size="icon" 
-                  onClick={onClose}
+            {/* Header */}
+            <div className="flex justify-between items-center mb-4">
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                onClick={onClose}
                   className="rounded-full hover:bg-[#FFEDD5] p-2"
-                >
+              >
                   <ArrowLeft className="h-12 w-12 text-[#EA580C]" />
+              </Button>
+            </div>
+
+            {/* Content Area */}
+              <div className="flex-1 h-[calc(100%-80px)] overflow-hidden">
+                <div className="h-full overflow-y-auto no-scrollbar">
+              {/* Navigation Buttons */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 p-4">
+                <Button 
+                  variant="outline"
+                      className="h-12 bg-white border-[#EA580C] text-[#EA580C] hover:bg-[#FED7AA] hover:text-[#C2410C]"
+                      onClick={() => setShowCalendar(true)}
+                >
+                      Calendar
+                </Button>
+                <Button 
+                  variant="outline"
+                      className="h-12 bg-white border-[#EA580C] text-[#EA580C] hover:bg-[#FED7AA] hover:text-[#C2410C]"
+                >
+                  Categories
+                </Button>
+                <Button 
+                  variant="outline"
+                      className="h-12 bg-white border-[#EA580C] text-[#EA580C] hover:bg-[#FED7AA] hover:text-[#C2410C]"
+                >
+                      Summary
+                </Button>
+                <Button 
+                  variant="outline"
+                      onClick={() => setShowReminders(true)}
+                      className="h-12 bg-white border-[#EA580C] text-[#EA580C] hover:bg-[#FED7AA] hover:text-[#C2410C]"
+                >
+                  Reminders
                 </Button>
               </div>
 
-              {/* Content Area */}
-              <div className="flex-1 h-[calc(100%-80px)] overflow-hidden">
-                <div className="h-full overflow-y-auto no-scrollbar">
-                  {/* Navigation Buttons */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 p-4">
-                    <Button 
-                      variant="outline"
-                      className="h-12 bg-white border-[#EA580C] text-[#EA580C] hover:bg-[#FED7AA] hover:text-[#C2410C]"
-                      onClick={() => setShowCalendar(true)}
-                    >
-                      Calendar
-                    </Button>
-                    <Button 
-                      variant="outline"
-                      className="h-12 bg-white border-[#EA580C] text-[#EA580C] hover:bg-[#FED7AA] hover:text-[#C2410C]"
-                    >
-                      Categories
-                    </Button>
-                    <Button 
-                      variant="outline"
-                      className="h-12 bg-white border-[#EA580C] text-[#EA580C] hover:bg-[#FED7AA] hover:text-[#C2410C]"
-                    >
-                      Summary
-                    </Button>
-                    <Button 
-                      variant="outline"
-                      onClick={() => setShowReminders(true)}
-                      className="h-12 bg-white border-[#EA580C] text-[#EA580C] hover:bg-[#FED7AA] hover:text-[#C2410C]"
-                    >
-                      Reminders
-                    </Button>
-                  </div>
-
-                  {/* Financial Stats */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4">
+              {/* Financial Stats */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4">
                     <div className="bg-[#FFEDD5] rounded-xl p-4 border-2 border-[#F97316]">
-                      <div className="flex items-center gap-2 mb-2">
+                  <div className="flex items-center gap-2 mb-2">
                         <IndianRupee className="w-5 h-5 text-[#15803D]" />
                         <span className="text-sm text-[#9A3412]">Total Income</span>
-                      </div>
+                  </div>
                       <div className="text-xl font-bold text-[#EA580C]">{formatCurrency(totalIncome)}</div>
-                      <div className="flex items-center gap-1 mt-1">
+                  <div className="flex items-center gap-1 mt-1">
                         <ArrowUp className="w-4 h-4 text-[#15803D]" />
                         <span className="text-xs text-[#15803D]">+12% from last month</span>
-                      </div>
-                    </div>
+                  </div>
+                </div>
 
                     <div className="bg-[#FFEDD5] rounded-xl p-4 border-2 border-[#F97316]">
-                      <div className="flex items-center gap-2 mb-2">
+                  <div className="flex items-center gap-2 mb-2">
                         <IndianRupee className="w-5 h-5 text-[#DC2626]" />
                         <span className="text-sm text-[#9A3412]">Total Expenses</span>
-                      </div>
+                  </div>
                       <div className="text-xl font-bold text-[#EA580C]">{formatCurrency(totalExpenses)}</div>
-                      <div className="flex items-center gap-1 mt-1">
+                  <div className="flex items-center gap-1 mt-1">
                         <ArrowDown className="w-4 h-4 text-[#DC2626]" />
                         <span className="text-xs text-[#DC2626]">-8% from last month</span>
-                      </div>
-                    </div>
                   </div>
+                </div>
+              </div>
 
-                  {/* Recent Transactions */}
-                  <div className="p-4">
+              {/* Recent Transactions */}
+              <div className="p-4">
                     <h3 className="text-2xl font-bold text-[#EA580C] mb-4">Recent Transactions</h3>
                     <div className="space-y-3 max-h-[300px] overflow-y-auto no-scrollbar">
                       {mockRecents.map((item) => (
@@ -274,9 +274,9 @@ export function BookPanel({ open, onClose }: BookPanelProps) {
               transactions={mockRecents} 
               onClose={() => setShowCalendar(false)} 
             />
-          </div>
-        </DialogContent>
-      </Dialog>
+        </div>
+      </DialogContent>
+    </Dialog>
 
       <ReminderPanel 
         open={showReminders} 
