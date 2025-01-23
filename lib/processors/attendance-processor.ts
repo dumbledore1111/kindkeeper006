@@ -127,228 +127,13 @@ export class AttendanceProcessor {
         attendanceCache.set(this.userId, currentAttendance);
       }
 
-      // Step 1: Check for name
-      if (!currentAttendance.name) {
-        // If input looks like a name (single word, no numbers)
-        if (/^[a-zA-Z]+$/.test(inputStr.trim())) {
-          currentAttendance.name = inputStr.trim();
-          attendanceCache.set(this.userId, currentAttendance);
-          
-          return {
-            success: false,
-            response: `How much do we pay ${currentAttendance.name}?`,
-            context: {
-              userId: this.userId,
-              currentIntent: {
-                type: 'attendance',
-                confidence: 0.8,
-                relatedEvents: []
-              },
-              lastIntent: 'attendance',
-              history: context?.history || [],
-              recentEvents: [],
-              relatedContexts: [],
-              relatedEvents: [],
-              timeContext: {
-                referenceDate: new Date()
-              },
-              currentAttendance
-            },
-            needsMoreInfo: {
-              type: 'wage_info',
-              context: 'Need wage and schedule information'
-            },
-            intent: 'attendance'
-          };
-        } else {
-          return {
-            success: false,
-            response: `Could you specify the ${currentAttendance.provider_type}'s name?`,
-            context: {
-              userId: this.userId,
-              currentIntent: {
-                type: 'attendance',
-                confidence: 0.8,
-                relatedEvents: []
-              },
-              lastIntent: 'attendance',
-              history: context?.history || [],
-              recentEvents: [],
-              relatedContexts: [],
-              relatedEvents: [],
-              timeContext: {
-                referenceDate: new Date()
-              },
-              currentAttendance
-            },
-            needsMoreInfo: {
-              type: 'provider_name',
-              context: 'Name is required for attendance tracking'
-            },
-            intent: 'attendance'
-          };
-        }
-      }
-
-      // Step 2: Check for wage info
-      if (!currentAttendance.wage_info) {
-        const wageInfo = this.intentDetector.parseWageInfo(inputStr);
-        if (wageInfo) {
-          currentAttendance.wage_info = wageInfo;
-          attendanceCache.set(this.userId, currentAttendance);
-          
-          // Ask for schedule info
-          return {
-            success: false,
-            response: `How many days a week does ${currentAttendance.name} work?`,
-            context: {
-              userId: this.userId,
-              currentIntent: {
-                type: 'attendance',
-                confidence: 0.8,
-                relatedEvents: []
-              },
-              lastIntent: 'attendance',
-              history: context?.history || [],
-              recentEvents: [],
-              relatedContexts: [],
-              relatedEvents: [],
-              timeContext: {
-                referenceDate: new Date()
-              },
-              currentAttendance
-            },
-            needsMoreInfo: {
-              type: 'schedule',
-              context: 'Need schedule information'
-            },
-            intent: 'attendance'
-          };
-        } else {
-          return {
-            success: false,
-            response: `How much do we pay ${currentAttendance.name} and how often (daily/weekly/monthly)?`,
-            context: {
-              userId: this.userId,
-              currentIntent: {
-                type: 'attendance',
-                confidence: 0.8,
-                relatedEvents: []
-              },
-              lastIntent: 'attendance',
-              history: context?.history || [],
-              recentEvents: [],
-              relatedContexts: [],
-              relatedEvents: [],
-              timeContext: {
-                referenceDate: new Date()
-              },
-              currentAttendance
-            },
-            needsMoreInfo: {
-              type: 'wage_info',
-              context: 'Need wage and schedule information'
-            },
-            intent: 'attendance'
-          };
-        }
-      }
-
-      // Step 3: Check for schedule info
-      if (currentAttendance.wage_info && (!currentAttendance.wage_info.schedule?.visits_per_week || !currentAttendance.wage_info.schedule?.hours_per_visit)) {
-        const scheduleInfo = this.intentDetector.parseScheduleInfo(inputStr);
-        if (scheduleInfo) {
-          if (!currentAttendance.wage_info.schedule) {
-            currentAttendance.wage_info.schedule = {};
-          }
-          
-          if (!currentAttendance.wage_info.schedule.visits_per_week && scheduleInfo.visits_per_week) {
-            currentAttendance.wage_info.schedule.visits_per_week = scheduleInfo.visits_per_week;
-            attendanceCache.set(this.userId, currentAttendance);
-            
-            return {
-              success: false,
-              response: `How many hours per visit?`,
-              context: {
-                userId: this.userId,
-                currentIntent: {
-                  type: 'attendance',
-                  confidence: 0.8,
-                  relatedEvents: []
-                },
-                lastIntent: 'attendance',
-                history: context?.history || [],
-                recentEvents: [],
-                relatedContexts: [],
-                relatedEvents: [],
-                timeContext: {
-                  referenceDate: new Date()
-                },
-                currentAttendance
-              },
-              needsMoreInfo: {
-                type: 'schedule',
-                context: 'Need hours per visit'
-              },
-              intent: 'attendance'
-            };
-          }
-          
-          if (!currentAttendance.wage_info.schedule.hours_per_visit && scheduleInfo.hours_per_visit) {
-            currentAttendance.wage_info.schedule.hours_per_visit = scheduleInfo.hours_per_visit;
-            attendanceCache.set(this.userId, currentAttendance);
-          }
-        }
-      }
-
-      // If we have all required information, save it
-      if (currentAttendance.wage_info && 
-          currentAttendance.wage_info.schedule?.visits_per_week && 
-          currentAttendance.wage_info.schedule?.hours_per_visit) {
-        
-        const dbOperations: DatabaseOperation[] = [
-          {
-            table: 'attendance_logs',
-            operation: 'insert',
-            data: {
-              user_id: this.userId,
-              provider_type: currentAttendance.provider_type,
-              name: currentAttendance.name,
-              status: currentAttendance.status,
-              date: currentAttendance.date
-            }
-          },
-          {
-            table: 'service_provider_wages',
-            operation: 'insert',
-            data: {
-              user_id: this.userId,
-              provider_type: currentAttendance.provider_type,
-              name: currentAttendance.name,
-              wage_amount: currentAttendance.wage_info.amount,
-              wage_frequency: currentAttendance.wage_info.frequency,
-              visits_per_week: currentAttendance.wage_info.schedule.visits_per_week,
-              hours_per_visit: currentAttendance.wage_info.schedule.hours_per_visit,
-              updated_at: new Date().toISOString()
-            }
-          }
-        ];
-
-        // Clear cache
-        attendanceCache.delete(this.userId);
-
-        const frequencyText = {
-          hourly: 'per hour',
-          daily: 'per day',
-          weekly: 'per week',
-          monthly: 'per month'
-        };
-
-        const scheduleText = ` (${currentAttendance.wage_info.schedule.visits_per_week} times a week, ${currentAttendance.wage_info.schedule.hours_per_visit} hours per visit)`;
-
+      // Get maid's name and type from OpenAI response
+      // console.log('Maid name:', maidName);
+      // Handle attendance-related queries
+      if (inputStr.includes('leave')) {
         return {
           success: true,
-          response: `Got it! ${currentAttendance.name} is ${currentAttendance.status} today. Wage set to ₹${currentAttendance.wage_info.amount} ${frequencyText[currentAttendance.wage_info.frequency]}${scheduleText}.`,
+          response: `I have marked your maid as 'absent'`,
           context: {
             userId: this.userId,
             currentIntent: {
@@ -366,20 +151,263 @@ export class AttendanceProcessor {
             },
             currentAttendance: undefined
           },
-          intent: 'attendance',
-          dbOperations
+          intent: 'attendance'
         };
       }
 
-      // This should rarely be reached, as we handle all cases above
-      console.log('Unexpected state in attendance processor:', {
-        currentAttendance,
-        input: inputStr
-      });
+      // Step 1: Check for name
+      // if (!currentAttendance.name) {
+      //   // If input looks like a name (single word, no numbers)
+      //   if (/^[a-zA-Z]+$/.test(inputStr.trim())) {
+      //     currentAttendance.name = inputStr.trim();
+      //     attendanceCache.set(this.userId, currentAttendance);
+          
+      //     return {
+      //       success: false,
+      //       response: `How much do we pay ${currentAttendance.name}?`,
+      //       context: {
+      //         userId: this.userId,
+      //         currentIntent: {
+      //           type: 'attendance',
+      //           confidence: 0.8,
+      //           relatedEvents: []
+      //         },
+      //         lastIntent: 'attendance',
+      //         history: context?.history || [],
+      //         recentEvents: [],
+      //         relatedContexts: [],
+      //         relatedEvents: [],
+      //         timeContext: {
+      //           referenceDate: new Date()
+      //         },
+      //         currentAttendance
+      //       },
+      //       needsMoreInfo: {
+      //         type: 'wage_info',
+      //         context: 'Need wage and schedule information'
+      //       },
+      //       intent: 'attendance'
+      //     };
+      //   } else {
+      //     return {
+      //       success: false,
+      //       response: `Could you specify the ${currentAttendance.provider_type}'s name?`,
+      //       context: {
+      //         userId: this.userId,
+      //         currentIntent: {
+      //           type: 'attendance',
+      //           confidence: 0.8,
+      //           relatedEvents: []
+      //         },
+      //         lastIntent: 'attendance',
+      //         history: context?.history || [],
+      //         recentEvents: [],
+      //         relatedContexts: [],
+      //         relatedEvents: [],
+      //         timeContext: {
+      //           referenceDate: new Date()
+      //         },
+      //         currentAttendance
+      //       },
+      //       needsMoreInfo: {
+      //         type: 'provider_name',
+      //         context: 'Name is required for attendance tracking'
+      //       },
+      //       intent: 'attendance'
+      //     };
+      //   }
+      // }
+
+      // // Step 2: Check for wage info
+      // if (!currentAttendance.wage_info) {
+      //   const wageInfo = this.intentDetector.parseWageInfo(inputStr);
+      //   if (wageInfo) {
+      //     currentAttendance.wage_info = wageInfo;
+      //     attendanceCache.set(this.userId, currentAttendance);
+          
+      //     // Ask for schedule info
+      //     return {
+      //       success: false,
+      //       response: `How many days a week does ${currentAttendance.name} work?`,
+      //       context: {
+      //         userId: this.userId,
+      //         currentIntent: {
+      //           type: 'attendance',
+      //           confidence: 0.8,
+      //           relatedEvents: []
+      //         },
+      //         lastIntent: 'attendance',
+      //         history: context?.history || [],
+      //         recentEvents: [],
+      //         relatedContexts: [],
+      //         relatedEvents: [],
+      //         timeContext: {
+      //           referenceDate: new Date()
+      //         },
+      //         currentAttendance
+      //       },
+      //       needsMoreInfo: {
+      //         type: 'schedule',
+      //         context: 'Need schedule information'
+      //       },
+      //       intent: 'attendance'
+      //     };
+      //   } else {
+      //     return {
+      //       success: false,
+      //       response: `How much do we pay ${currentAttendance.name} and how often (daily/weekly/monthly)?`,
+      //       context: {
+      //         userId: this.userId,
+      //         currentIntent: {
+      //           type: 'attendance',
+      //           confidence: 0.8,
+      //           relatedEvents: []
+      //         },
+      //         lastIntent: 'attendance',
+      //         history: context?.history || [],
+      //         recentEvents: [],
+      //         relatedContexts: [],
+      //         relatedEvents: [],
+      //         timeContext: {
+      //           referenceDate: new Date()
+      //         },
+      //         currentAttendance
+      //       },
+      //       needsMoreInfo: {
+      //         type: 'wage_info',
+      //         context: 'Need wage and schedule information'
+      //       },
+      //       intent: 'attendance'
+      //     };
+      //   }
+      // }
+
+      // // Step 3: Check for schedule info
+      // if (currentAttendance.wage_info && (!currentAttendance.wage_info.schedule?.visits_per_week || !currentAttendance.wage_info.schedule?.hours_per_visit)) {
+      //   const scheduleInfo = this.intentDetector.parseScheduleInfo(inputStr);
+      //   if (scheduleInfo) {
+      //     if (!currentAttendance.wage_info.schedule) {
+      //       currentAttendance.wage_info.schedule = {};
+      //     }
+          
+      //     if (!currentAttendance.wage_info.schedule.visits_per_week && scheduleInfo.visits_per_week) {
+      //       currentAttendance.wage_info.schedule.visits_per_week = scheduleInfo.visits_per_week;
+      //       attendanceCache.set(this.userId, currentAttendance);
+            
+      //       return {
+      //         success: false,
+      //         response: `How many hours per visit?`,
+      //         context: {
+      //           userId: this.userId,
+      //           currentIntent: {
+      //             type: 'attendance',
+      //             confidence: 0.8,
+      //             relatedEvents: []
+      //           },
+      //           lastIntent: 'attendance',
+      //           history: context?.history || [],
+      //           recentEvents: [],
+      //           relatedContexts: [],
+      //           relatedEvents: [],
+      //           timeContext: {
+      //             referenceDate: new Date()
+      //           },
+      //           currentAttendance
+      //         },
+      //         needsMoreInfo: {
+      //           type: 'schedule',
+      //           context: 'Need hours per visit'
+      //         },
+      //         intent: 'attendance'
+      //       };
+      //     }
+          
+      //     if (!currentAttendance.wage_info.schedule.hours_per_visit && scheduleInfo.hours_per_visit) {
+      //       currentAttendance.wage_info.schedule.hours_per_visit = scheduleInfo.hours_per_visit;
+      //       attendanceCache.set(this.userId, currentAttendance);
+      //     }
+      //   }
+      // }
+
+      // // If we have all required information, save it
+      // if (currentAttendance.wage_info && 
+      //     currentAttendance.wage_info.schedule?.visits_per_week && 
+      //     currentAttendance.wage_info.schedule?.hours_per_visit) {
+        
+      //   const dbOperations: DatabaseOperation[] = [
+      //     {
+      //       table: 'attendance_logs',
+      //       operation: 'insert',
+      //       data: {
+      //         user_id: this.userId,
+      //         provider_type: currentAttendance.provider_type,
+      //         name: currentAttendance.name,
+      //         status: currentAttendance.status,
+      //         date: currentAttendance.date
+      //       }
+      //     },
+      //     {
+      //       table: 'service_provider_wages',
+      //       operation: 'insert',
+      //       data: {
+      //         user_id: this.userId,
+      //         provider_type: currentAttendance.provider_type,
+      //         name: currentAttendance.name,
+      //         wage_amount: currentAttendance.wage_info.amount,
+      //         wage_frequency: currentAttendance.wage_info.frequency,
+      //         visits_per_week: currentAttendance.wage_info.schedule.visits_per_week,
+      //         hours_per_visit: currentAttendance.wage_info.schedule.hours_per_visit,
+      //         updated_at: new Date().toISOString()
+      //       }
+      //     }
+      //   ];
+
+      //   // Clear cache
+      //   attendanceCache.delete(this.userId);
+
+      //   const frequencyText = {
+      //     hourly: 'per hour',
+      //     daily: 'per day',
+      //     weekly: 'per week',
+      //     monthly: 'per month'
+      //   };
+
+      //   const scheduleText = ` (${currentAttendance.wage_info.schedule.visits_per_week} times a week, ${currentAttendance.wage_info.schedule.hours_per_visit} hours per visit)`;
+
+      //   return {
+      //     success: true,
+      //     response: `Got it! ${currentAttendance.name} is ${currentAttendance.status} today. Wage set to ₹${currentAttendance.wage_info.amount} ${frequencyText[currentAttendance.wage_info.frequency]}${scheduleText}.`,
+      //     context: {
+      //       userId: this.userId,
+      //       currentIntent: {
+      //         type: 'attendance',
+      //         confidence: 0.8,
+      //         relatedEvents: []
+      //       },
+      //       lastIntent: 'attendance',
+      //       history: context?.history || [],
+      //       recentEvents: [],
+      //       relatedContexts: [],
+      //       relatedEvents: [],
+      //       timeContext: {
+      //         referenceDate: new Date()
+      //       },
+      //       currentAttendance: undefined
+      //     },
+      //     intent: 'attendance',
+      //     dbOperations
+      //   };
+      // }
+
+      // // This should rarely be reached, as we handle all cases above
+      // console.log('Unexpected state in attendance processor:', {
+      //   currentAttendance,
+      //   input: inputStr
+      // });
 
       return {
         success: false,
-        response: 'Could you provide more details about the attendance?',
+        response: 'I have marked your maid as absent',
         context: {
           userId: this.userId,
           currentIntent: {

@@ -121,8 +121,10 @@ export class IntentDetector {
       })
 
       const content = completion.choices[0].message.content || '{}'
+      console.log('Raw OpenAI response:', content);
       const cleanedContent = this.cleanOpenAIResponse(content)
-      console.log('OpenAI response:', cleanedContent);
+      console.log('Cleaned OpenAI response:', cleanedContent);
+      globalThis.globalCleanedContent = cleanedContent;
       const response = JSON.parse(cleanedContent)
       return response as IntentDetectionResponse
     } catch (error) {

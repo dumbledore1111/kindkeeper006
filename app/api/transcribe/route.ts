@@ -6,11 +6,12 @@ export async function POST(req: Request) {
     const formData = await req.formData()
     const audioFile = formData.get('audio') as Blob
 
-    if (!audioFile) {
+    if (!audioFile || !(audioFile instanceof Blob)) {
+      console.error('Invalid audio file provided:', audioFile);
       return NextResponse.json(
-        { error: 'No audio file provided' },
+        { error: 'No valid audio file provided' },
         { status: 400 }
-      )
+      );
     }
 
     // Convert to WAV format
